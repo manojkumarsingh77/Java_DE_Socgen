@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Run TrainingMain",
+            "request": "launch",
+            "mainClass": "com.omnibank.TrainingMain",
+            "projectName": "omnibank-training",
+            "vmArgs": "-Xmx2g"
+        }
+    ]
+}
