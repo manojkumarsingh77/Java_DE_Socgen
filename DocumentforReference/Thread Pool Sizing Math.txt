@@ -1,0 +1,111 @@
+For Thread Pool Sizing Math, W/C (Wait/Compute Ratio) means:
+
+W/C= Time spent doing CPU work / Time spent waiting
+	​
+Where:
+
+Wait (W) = DB calls, API calls, file I/O, network latency, locks
+Compute (C) = actual CPU processing time
+
+Used in formula:
+
+Threads=CPU_Cores×(1+W/C)
+
+
+Example:
+
+Bank payment API request:
+
+HTTP Request Total = 320 ms
+
+DB Query = 180 ms
+REST Call = 90 ms
+Business Logic = 40 ms
+Serialization = 10 ms
+
+Wait time:
+
+180 + 90 = 270 ms
+
+Compute time:
+
+40 + 10 = 50 ms
+
+So:
+
+W/C=270/50=5.4
+
+-----
+
+Measured:
+
+Activity	Time
+Fraud API	120 ms
+DB Query	80 ms
+Reward Calculation	20 ms
+
+Wait:
+
+120 + 80 = 200 ms
+
+Compute:
+
+20 ms
+
+So:
+
+W/C=200/20=10
+
+If CPU cores = 8:
+
+Threads=8×(1+10)
+--------------------
+Blocking coefficient:
+
+Blocking Coefficient (B) is another way to express how much time a task spends waiting vs doing useful CPU work.
+
+It is heavily used in Java concurrency / thread pool sizing.
+
+Formula:
+
+B= Wait Time+Compute Time / Wait Time
+	​
+Where:
+
+Wait Time (W) = I/O wait, DB calls, API latency, lock wait
+Compute Time (C) = actual CPU execution
+
+Equivalent:
+
+B= W / W + C
+
+Range:
+
+0≤B<1
+Example 1 (Simple)
+
+Task:
+
+DB call = 80 ms
+API call = 120 ms
+CPU processing = 50 ms
+
+Wait:
+
+W=80+120=200ms
+
+Compute:
+
+C=50ms
+
+Blocking coefficient:
+
+B= 200+50 / 200
+	​
+= 250 / 200
+	​
+=0.8
+
+Meaning:
+
+80% of time thread is blocked/waiting
