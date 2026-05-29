@@ -1,0 +1,4 @@
+Benchmark                                          Mode  Cnt   Score   Error  Units
+RecommendationBenchmark.fastEngine_throughput     thrpt    3  49.870 ± 0.348  ops/s
+RecommendationBenchmark.fastEngine_singleRequest   avgt    3  20.045 ± 0.147  ms/op
+RecommendationBenchmark.slowEngine_singleRequest   avgt    3  45.192 ± 0.484  ms/op

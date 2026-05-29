@@ -1,0 +1,3 @@
+[0.002s][warning][gc] -XX:+PrintGCDetails is deprecated. Will use -Xlog:gc* instead.
+[0.005s][info   ][gc] Using G1
+[0.256s][info   ][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 25M->5M(514M) 2.026ms

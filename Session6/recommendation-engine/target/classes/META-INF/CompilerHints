@@ -1,0 +1,10 @@
+dontinline,*.*_all_jmhStub
+dontinline,*.*_avgt_jmhStub
+dontinline,*.*_sample_jmhStub
+dontinline,*.*_ss_jmhStub
+dontinline,*.*_thrpt_jmhStub
+inline,com/bank/recommendation/benchmark/RecommendationBenchmark.fastEngine_singleRequest
+inline,com/bank/recommendation/benchmark/RecommendationBenchmark.fastEngine_throughput
+inline,com/bank/recommendation/benchmark/RecommendationBenchmark.setup
+inline,com/bank/recommendation/benchmark/RecommendationBenchmark.slowEngine_singleRequest
+inline,com/bank/recommendation/benchmark/RecommendationBenchmark.tearDown
