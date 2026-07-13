@@ -1,0 +1,61 @@
+global:
+  resolve_timeout: 5m
+
+# ALERT FATIGUE MITIGATION, technique #1: GROUPING.
+# Instead of one notification per firing alert, Alertmanager batches alerts that share
+# the same (alertname, job) into a single notification. If five different things go
+# wrong on the same service in the same group_interval window, on-call gets ONE message,
+# not five.
+route:
+  receiver: default-ticket
+  group_by: ["alertname", "job"]
+  group_wait: 30s        # wait briefly to batch near-simultaneous alerts together
+  group_interval: 5m      # minimum time between updates to an already-notified group
+  repeat_interval: 4h      # don't re-notify the same unresolved group more than this often
+
+  routes:
+    # ALERT FATIGUE MITIGATION, technique #2: SEVERITY-BASED ROUTING.
+    # Only "critical" alerts page a human immediately. "warning" alerts go to a
+    # ticket/Slack queue with a much longer repeat_interval - real signal still gets
+    # captured, but doesn't wake anyone up at 3am for a non-urgent degradation.
+    - matchers:
+        - severity = "critical"
+      receiver: pager-critical
+      group_wait: 10s
+      group_interval: 2m
+      repeat_interval: 15m
+      continue: false
+
+    - matchers:
+        - severity = "warning"
+      receiver: ticket-warning
+      repeat_interval: 4h
+      continue: false
+
+# ALERT FATIGUE MITIGATION, technique #3: INHIBITION.
+# When ServiceDown is firing for a given job, the other golden-signal/SLO alerts for
+# that SAME job are symptoms of the same root cause, not new incidents - suppress them
+# so on-call investigates one outage instead of being paged four separate times for it.
+inhibit_rules:
+  - source_matchers:
+      - alertname = "ServiceDown"
+    target_matchers:
+      - alertname =~ "HighErrorRateWarning|HighLatencyP99|ConsumerLagHigh|ErrorBudgetBurnFastPage"
+    equal: ["job"]
+
+receivers:
+  - name: default-ticket
+    # Point this at your ticketing system or a low-priority channel.
+    # webhook_configs:
+    #   - url: "http://your-ticketing-system.local/webhook"
+
+  - name: pager-critical
+    # Point this at PagerDuty / Opsgenie / VictorOps for true wake-someone-up paging.
+    # pagerduty_configs:
+    #   - routing_key: "<your-integration-key>"
+
+  - name: ticket-warning
+    # Point this at a non-paging Slack channel or ticket queue.
+    # slack_configs:
+    #   - api_url: "https://hooks.slack.com/services/T000/B000/XXXX"
+    #     channel: "#order-platform-alerts"

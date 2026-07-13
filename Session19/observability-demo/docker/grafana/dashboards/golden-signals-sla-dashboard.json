@@ -1,0 +1,196 @@
+{
+  "uid": "order-pipeline-golden-signals",
+  "title": "Order Pipeline - Golden Signals & SLA",
+  "tags": ["observability-demo", "golden-signals", "sla"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Golden Signals",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Traffic - produced vs consumed (req/s)",
+      "description": "TRAFFIC golden signal. A growing gap between produced and consumed indicates the consumer cannot keep up.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(orders_produced_total[1m]))", "legendFormat": "produced", "refId": "A" },
+        { "expr": "sum(rate(orders_consumed_total[1m]))", "legendFormat": "consumed", "refId": "B" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Error rate (%)",
+      "description": "ERRORS golden signal. Red threshold line marks the 5% warning alert threshold from alerts.yml.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(orders_processing_errors_total[5m])) / (sum(rate(orders_consumed_total[5m])) + sum(rate(orders_processing_errors_total[5m])))",
+          "legendFormat": "error rate %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Processing latency p50 / p95 / p99",
+      "description": "LATENCY golden signal, computed from the Prometheus histogram (orders_processing_duration_seconds_bucket) - never from client-side quantiles.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(orders_processing_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(orders_processing_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(orders_processing_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Saturation - JVM heap used (%) and processing staleness (s)",
+      "description": "SATURATION golden signal: JVM memory pressure on the consumer, plus our staleness proxy for consumer lag.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 * sum(jvm_memory_used_bytes{service=\"order-stream-processor\", area=\"heap\"}) / sum(jvm_memory_max_bytes{service=\"order-stream-processor\", area=\"heap\"})",
+          "legendFormat": "heap used %",
+          "refId": "A"
+        },
+        { "expr": "orders_processing_staleness_seconds", "legendFormat": "staleness (s)", "refId": "B" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "SLA / SLO",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Current availability vs 99.9% SLO",
+      "description": "1 - 5m error rate, expressed as a percentage. The threshold marks the 99.9% SLO target.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 99,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 99.9 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - (sum(rate(orders_processing_errors_total[5m])) / (sum(rate(orders_consumed_total[5m])) + sum(rate(orders_processing_errors_total[5m])))))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Error-budget burn rate (5m window)",
+      "description": "Multiplier of the allowed 99.9% SLO error rate. >= 14.4x sustained across 5m AND 1h pages on-call (ErrorBudgetBurnFastPage in alerts.yml).",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 14.4 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "(sum(rate(orders_processing_errors_total[5m])) / (sum(rate(orders_consumed_total[5m])) + sum(rate(orders_processing_errors_total[5m])))) / 0.001",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Kafka consumer-group lag (messages)",
+      "description": "Real broker-reported lag from kafka-exporter - the ground-truth saturation signal for the consumer.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 200 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "sum(kafka_consumergroup_lag)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Tracing & Log Correlation",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "How to investigate an incident from this dashboard",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 27 },
+      "options": {
+        "mode": "markdown",
+        "content": "**MTTR workflow used in this demo:**\n\n1. An alert fires (or you spot a spike above) -> note the approximate time window.\n2. Open **Zipkin** at http://localhost:9411 , filter by service `order-stream-processor`, and find a slow/errored trace in that time window.\n3. Copy the `correlationId` tag (or the trace's `traceId`) from the span.\n4. Open **Grafana Explore** against the **Loki** datasource and run:\n   `{service=\"order-stream-processor\"} | json | correlationId=\"<paste-id>\"`\n5. You now have the exact log lines, the exact trace, and the exact metric spike for one request - the three pillars of observability, correlated by one ID."
+      }
+    }
+  ]
+}

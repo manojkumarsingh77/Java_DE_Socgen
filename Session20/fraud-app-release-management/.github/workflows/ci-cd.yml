@@ -1,0 +1,132 @@
+name: Fraud App Release Pipeline
+
+# Pipeline automation topic: this workflow encodes the SAME stages as
+# scripts/00-full-demo.sh, but as a real, runnable CI/CD pipeline with
+# environment-protection manual-approval gates before Stage and Prod.
+#
+# To use against a real Azure Container Registry instead of the local
+# registry stand-in, set these repository secrets/variables:
+#   ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD (or use OIDC + az login)
+# and replace REGISTRY below with ${{ vars.ACR_LOGIN_SERVER }}.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version to release (e.g. 1.1.0)"
+        required: true
+        default: "1.0.0"
+
+env:
+  REGISTRY: localhost:5000
+  IMAGE_NAME: fraud-app
+
+jobs:
+
+  # ---------------- 1. Build & Test (shift-left CI gate) ----------------
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run unit tests
+        run: mvn -B test
+      - name: Package application
+        run: mvn -B clean package -DskipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fraud-app-jar
+          path: target/fraud-app.jar
+
+  # ---------------- 2. Build & Version the Docker image ----------------
+  build-image:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: |
+          VERSION="${{ github.event.inputs.version || '1.0.0' }}"
+          SHA=$(git rev-parse --short HEAD)
+          echo "image_tag=${VERSION}-${SHA}" >> "$GITHUB_OUTPUT"
+      - name: Build versioned image
+        run: |
+          docker build \
+            --build-arg APP_VERSION=${{ github.event.inputs.version || '1.0.0' }} \
+            --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
+            --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            -t ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.image_tag }} .
+      - name: Save image as artifact (for the scan job)
+        run: docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.image_tag }} -o image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar
+
+  # ---------------- 3. ACR-style security scan gate ----------------
+  security-scan:
+    needs: build-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      - name: Load image
+        run: docker load -i image.tar
+      - name: Trivy vulnerability scan (fails the pipeline on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ needs.build-image.outputs.image_tag }}
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+  # ---------------- 4. Push to registry (Dev) ----------------
+  push-dev:
+    needs: [build-image, security-scan]
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      - run: docker load -i image.tar
+      - name: Tag and push to registry (dev)
+        run: |
+          docker tag ${{ env.IMAGE_NAME }}:${{ needs.build-image.outputs.image_tag }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+          # docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+          echo "Would push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev (enable once REGISTRY is reachable from the runner)"
+
+  # ---------------- 5. Promote to Stage (manual approval gate) ----------------
+  promote-stage:
+    needs: push-dev
+    runs-on: ubuntu-latest
+    environment: staging   # configure required reviewers under Settings -> Environments -> staging
+    steps:
+      - run: echo "Promoting ${{ needs.build-image.outputs.image_tag || 'dev' }} -> stage (retag, no rebuild)"
+
+  # ---------------- 6. Promote to Prod-Green (manual approval gate) ----------------
+  promote-prod-green:
+    needs: promote-stage
+    runs-on: ubuntu-latest
+    environment: production   # configure required reviewers under Settings -> Environments -> production
+    steps:
+      - run: echo "Promoting stage -> prod-green (release candidate; prod-blue untouched)"
+
+  # ---------------- 7. Canary rollout ----------------
+  canary-rollout:
+    needs: promote-prod-green
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "10% -> 25% -> 50% -> 100% traffic shift to green, with health checks between each step"
+      - run: echo "See scripts/08-canary-rollout.sh for the exact commands run at each stage"

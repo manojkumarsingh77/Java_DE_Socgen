@@ -1,0 +1,80 @@
+name: containerization-training
+
+services:
+
+  # --- Baseline: hardened image, NO resource limits, default JVM tuning ---
+  # Run: docker compose -f docker/docker-compose.yml up demo-baseline
+  demo-baseline:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.hardened
+    image: spark-training/demo:hardened
+    container_name: demo-baseline
+    command: ["diagnostics"]
+
+  # --- Same image, CONSTRAINED like a realistic small K8s pod request/limit ---
+  # Compare this diagnostics output against demo-baseline above.
+  demo-constrained:
+    image: spark-training/demo:hardened
+    container_name: demo-constrained
+    command: ["diagnostics"]
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: "1.0"
+    environment:
+      JAVA_OPTS: >-
+        -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0
+        -XX:+ExitOnOutOfMemoryError -XX:ActiveProcessorCount=1
+    # RUNTIME hardening flags (a Dockerfile alone cannot enforce these):
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # --- Deliberately under-provisioned: watch it hit the memory ceiling ---
+  # Run: docker compose -f docker/docker-compose.yml up demo-memory-stress
+  demo-memory-stress:
+    image: spark-training/demo:hardened
+    container_name: demo-memory-stress
+    command: ["stress-memory"]
+    mem_limit: 300m
+    cpus: "0.5"
+    environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+      MEM_STRESS_STEP_MB: "20"
+      MEM_STRESS_STOP_PERCENT: "95"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # --- CPU-throttling demo: run alongside `docker stats` in another terminal ---
+  # Run: docker compose -f docker/docker-compose.yml up demo-cpu-stress
+  demo-cpu-stress:
+    image: spark-training/demo:hardened
+    container_name: demo-cpu-stress
+    command: ["stress-cpu"]
+    cpus: "0.5"
+    environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
+      CPU_STRESS_THREADS: "4"
+      CPU_STRESS_DURATION_SEC: "15"
+
+  # --- The real Spark ETL workload, tuned for a small constrained container ---
+  demo-spark-job-constrained:
+    image: spark-training/demo:hardened
+    container_name: demo-spark-job-constrained
+    command: ["job"]
+    mem_limit: 768m
+    cpus: "1.0"
+    environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70.0 -XX:+ExitOnOutOfMemoryError -XX:ActiveProcessorCount=1"
+      SPARK_DRIVER_MEMORY: "512m"
+      SHUFFLE_PARTITIONS: "2"
+      RECORD_COUNT: "50000"

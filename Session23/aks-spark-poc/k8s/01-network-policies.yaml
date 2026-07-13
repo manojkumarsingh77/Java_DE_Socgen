@@ -1,0 +1,151 @@
+# =============================================================================
+# TOPIC: Network Policies
+# Requires AKS created with --network-policy calico (or `cilium` with Azure
+# CNI Overlay). Apply per-namespace: repeat block for banking-dev,
+# banking-staging, banking-prod (shown once here for banking-dev; duplicate
+# with namespace changed for the other two - see README.md Section 6).
+# =============================================================================
+
+# 1) DEFAULT DENY ALL INGRESS - baseline zero-trust posture
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: banking-dev
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# 2) DEFAULT DENY ALL EGRESS - baseline zero-trust posture
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: banking-dev
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# 3) ALLOW: Spark driver <-> executor pod-to-pod traffic
+#    Ports: 7078 (BlockManager), 7079 (BlockManagerFileServer),
+#           driver's dynamic RPC port range 10000-10100 (fixed via
+#           spark.driver.port / spark.driver.blockManager.port in App.java
+#           extension - see README.md Section 6 for the exact SparkConf keys)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spark-driver-executor
+  namespace: banking-dev
+spec:
+  podSelector:
+    matchExpressions:
+      - key: spark-role
+        operator: In
+        values: ["driver", "executor"]
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: spark-role
+                operator: In
+                values: ["driver", "executor"]
+      ports:
+        - protocol: TCP
+          port: 7078
+        - protocol: TCP
+          port: 7079
+        - protocol: TCP
+          port: 10000
+        - protocol: TCP
+          port: 10100
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: spark-role
+                operator: In
+                values: ["driver", "executor"]
+      ports:
+        - protocol: TCP
+          port: 7078
+        - protocol: TCP
+          port: 7079
+        - protocol: TCP
+          port: 10000
+        - protocol: TCP
+          port: 10100
+---
+# 4) ALLOW: Egress to Azure Storage (ADLS Gen2 / Blob) and Azure Key Vault
+#    over 443, using the Azure public service tag CIDR ranges for the
+#    region the AKS cluster is deployed in. Replace the ipBlock CIDRs with
+#    the current published ranges from:
+#    https://www.microsoft.com/download/details.aspx?id=56519
+#    (Azure IP Ranges and Service Tags - Public Cloud), filtered to
+#    "Storage.<Region>" and "AzureKeyVault.<Region>".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-azure-storage-keyvault
+  namespace: banking-dev
+spec:
+  podSelector:
+    matchExpressions:
+      - key: spark-role
+        operator: In
+        values: ["driver", "executor"]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 20.150.0.0/16   # placeholder - replace with Storage.<Region> tag range
+        - ipBlock:
+            cidr: 20.190.0.0/16  # placeholder - replace with AzureKeyVault.<Region> tag range
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# 5) EXPLICIT DENY: cross-namespace traffic between environments.
+#    Because default-deny-ingress already blocks all cross-namespace
+#    traffic by omission (no matching allow rule references banking-staging
+#    or banking-prod), this policy is technically redundant but is kept as
+#    a DOCUMENTED, auditable control for compliance evidence - reviewers
+#    should see an explicit statement of intent, not rely on the absence
+#    of a rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: explicit-deny-cross-env
+  namespace: banking-dev
+  annotations:
+    compliance.bankcorp.com/control-id: "NET-ISO-001"
+    compliance.bankcorp.com/description: >-
+      Denies all traffic originating from banking-staging or banking-prod
+      namespaces into banking-dev, satisfying environment segregation
+      requirement for PCI-DSS scope reduction.
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: env
+                operator: In
+                values: ["dev"]

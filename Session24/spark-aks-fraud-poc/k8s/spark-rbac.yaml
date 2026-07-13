@@ -1,0 +1,28 @@
+# Spark's driver pod needs permission to create, list, watch and delete
+# executor pods (and a headless service for driver<->executor communication)
+# inside the target namespace. This ServiceAccount + RoleBinding grants that.
+#
+# Apply with:
+#   kubectl apply -f spark-rbac.yaml --namespace spark-poc
+#
+# (Create the namespace first: kubectl create namespace spark-poc)
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-driver-sa
+  namespace: spark-poc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-driver-rb
+  namespace: spark-poc
+subjects:
+  - kind: ServiceAccount
+    name: spark-driver-sa
+    namespace: spark-poc
+roleRef:
+  kind: ClusterRole
+  name: edit
+  apiGroup: rbac.authorization.k8s.io

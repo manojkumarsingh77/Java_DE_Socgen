@@ -1,0 +1,18 @@
+# Spark does not automatically expose the driver's UI (port 4040) via a
+# stable Service — it only auto-creates a headless service for
+# driver<->executor RPC. This Service uses the stable "demoapp" label set
+# in driver-pod-template.yaml (not the per-run applicationId label Spark
+# assigns itself) so it keeps working across job restarts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-streaming-driver-ui
+  namespace: spark-ops-poc
+spec:
+  selector:
+    demoapp: pos-streaming-driver
+  ports:
+    - name: spark-ui
+      port: 4040
+      targetPort: 4040
+  type: ClusterIP

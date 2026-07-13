@@ -1,0 +1,82 @@
+# =============================================================================
+# Requires the Spark Operator (kubeflow/spark-operator or
+# GoogleCloudPlatform/spark-on-k8s-operator) installed via:
+#   helm install spark-operator spark-operator/spark-operator \
+#     --namespace spark-operator --create-namespace \
+#     --set webhook.enable=true
+# =============================================================================
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: ledger-reconciliation-staging
+  namespace: banking-staging
+spec:
+  type: Java
+  mode: cluster
+  image: "<YOUR_ACR_NAME>.azurecr.io/aks-spark-poc:1.0.0"
+  imagePullPolicy: Always
+  mainClass: com.bankcorp.dataeng.App
+  mainApplicationFile: "local:///opt/spark/jars/aks-spark-poc-shaded.jar"
+  sparkVersion: "3.5.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+  sparkConf:
+    "spark.dynamicAllocation.enabled": "true"
+    "spark.dynamicAllocation.shuffleTracking.enabled": "true"
+    "spark.dynamicAllocation.minExecutors": "2"
+    "spark.dynamicAllocation.maxExecutors": "8"
+    "spark.kubernetes.executor.podTemplateFile": "/opt/spark/conf/executor-pod-template.yaml"
+    "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension"
+    "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+  driver:
+    cores: 2
+    memory: "4g"
+    serviceAccount: spark-workload-identity-sa
+    labels:
+      role: spark-driver
+      azure.workload.identity/use: "true"
+    nodeSelector:
+      role: spark-driver
+    tolerations: []
+    env:
+      - name: APP_ENV
+        value: "staging"
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: AZURE_MODE
+        value: "true"
+      - name: AZURE_STORAGE_ACCOUNT_NAME
+        value: "<YOUR_STORAGE_ACCOUNT_NAME>"
+    volumeMounts:
+      - name: secrets-store-inline
+        mountPath: "/mnt/secrets-store"
+        readOnly: true
+  executor:
+    cores: 4
+    instances: 2
+    memory: "8g"
+    labels:
+      role: spark-executor
+      azure.workload.identity/use: "true"
+    nodeSelector:
+      agentpool: staging-userpool
+    tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "staging-spark"
+        effect: "NoSchedule"
+    volumeMounts:
+      - name: secrets-store-inline
+        mountPath: "/mnt/secrets-store"
+        readOnly: true
+  volumes:
+    - name: secrets-store-inline
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: "banking-staging-adls-secrets"

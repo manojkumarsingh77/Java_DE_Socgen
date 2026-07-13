@@ -1,0 +1,19 @@
+# DEV environment: builds the image directly from source for fast iteration.
+# This is the ONLY environment allowed to build from source - Stage and Prod
+# always deploy a pre-built, pre-scanned, promoted (retagged) artifact.
+services:
+  fraud-app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: "${APP_VERSION:-0.0.0-dev}"
+        GIT_COMMIT: "${GIT_COMMIT:-nogit}"
+        BUILD_DATE: "${BUILD_DATE:-unknown}"
+    image: fraud-app:dev-local
+    container_name: fraud-app-dev
+    environment:
+      APP_ENV: dev
+      DEPLOY_SLOT: dev
+    ports:
+      - "8081:8080"

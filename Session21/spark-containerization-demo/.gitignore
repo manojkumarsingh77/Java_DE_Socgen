@@ -1,0 +1,6 @@
+target/
+*.class
+.DS_Store
+*.iml
+.idea/workspace.xml
+.idea/shelf/

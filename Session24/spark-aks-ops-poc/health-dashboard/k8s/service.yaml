@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: streaming-health-dashboard-svc
+  namespace: spark-ops-poc
+spec:
+  selector:
+    app: streaming-health-dashboard
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP

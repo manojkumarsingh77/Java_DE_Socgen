@@ -1,0 +1,9 @@
+{
+  "version": "1.0.2",
+  "gitCommitSha": "cbd4c81",
+  "buildTimestampUtc": "2026-07-06T06:34:56.925917Z",
+  "pushedAt": "2026-07-06T06:34:56.930585Z",
+  "scanPassed": true,
+  "criticalVulnerabilities": 0,
+  "highVulnerabilities": 1
+}

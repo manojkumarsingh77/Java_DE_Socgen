@@ -1,0 +1,34 @@
+# =============================================================================
+# TOPIC: Multi-Env Isolation
+# Three isolated namespaces - one per environment. Each is labeled so both
+# NetworkPolicy podSelectors AND ResourceQuota/LimitRange objects can target
+# them precisely, and so Azure Policy / Gatekeeper constraints (not shown
+# here) can be scoped per env in a real enterprise cluster.
+# Apply with: kubectl apply -f k8s/00-namespaces.yaml
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: banking-dev
+  labels:
+    env: dev
+    workload-type: spark-batch
+    data-classification: non-production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: banking-staging
+  labels:
+    env: staging
+    workload-type: spark-batch
+    data-classification: non-production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: banking-prod
+  labels:
+    env: prod
+    workload-type: spark-batch
+    data-classification: production-restricted

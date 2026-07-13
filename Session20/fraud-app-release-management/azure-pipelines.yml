@@ -1,0 +1,135 @@
+# Azure Pipelines reference implementation of the same release process,
+# using native Azure Container Registry tasks. This is a REFERENCE file -
+# it needs an actual Azure DevOps project + service connection + ACR
+# instance to run; it's included so trainees whose organization uses Azure
+# can see the 1:1 mapping from the local Docker demo to real ACR tooling.
+#
+# Prerequisites to actually run this:
+#   1. An Azure Container Registry (az acr create ...)
+#   2. An Azure DevOps service connection to that ACR (Docker Registry type)
+#   3. Environments "staging" and "production" defined in Azure DevOps with
+#      approval checks configured (Pipelines -> Environments -> Approvals)
+
+trigger:
+  branches:
+    include: [main]
+
+variables:
+  acrServiceConnection: "acr-service-connection"   # name of your ACR service connection
+  imageRepository: "fraud-app"
+  acrLoginServer: "yourregistry.azurecr.io"          # replace with your ACR
+  appVersion: "1.0.0"
+  gitCommit: "$(Build.SourceVersion)"
+
+stages:
+
+  # ---------------- Stage 1: Build & Test ----------------
+  - stage: BuildAndTest
+    jobs:
+      - job: MavenBuildTest
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: JavaToolInstaller@0
+            inputs:
+              versionSpec: "17"
+              jdkArchitectureOption: "x64"
+              jdkSourceOption: "PreInstalled"
+          - script: mvn -B test
+            displayName: "Run unit tests"
+          - script: mvn -B clean package -DskipTests
+            displayName: "Package application"
+
+  # ---------------- Stage 2: Build & Push image to ACR (versioned) ----------------
+  - stage: BuildAndPushImage
+    dependsOn: BuildAndTest
+    jobs:
+      - job: BuildImage
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: Docker@2
+            displayName: "Build and push versioned image to ACR"
+            inputs:
+              containerRegistry: "$(acrServiceConnection)"
+              repository: "$(imageRepository)"
+              command: "buildAndPush"
+              Dockerfile: "Dockerfile"
+              buildContext: "."
+              arguments: >
+                --build-arg APP_VERSION=$(appVersion)
+                --build-arg GIT_COMMIT=$(gitCommit)
+                --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              tags: |
+                $(appVersion)-$(gitCommit)
+                dev
+
+  # ---------------- Stage 3: ACR / Defender security scan gate ----------------
+  # ACR Tasks can run a scan automatically on push (Microsoft Defender for
+  # Cloud's ACR integration), or you can invoke Trivy explicitly here:
+  - stage: SecurityScan
+    dependsOn: BuildAndPushImage
+    jobs:
+      - job: TrivyScan
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - script: |
+              docker run --rm aquasec/trivy:latest image \
+                --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed \
+                $(acrLoginServer)/$(imageRepository):$(appVersion)-$(gitCommit)
+            displayName: "Trivy vulnerability gate"
+
+  # ---------------- Stage 4: Promote to Staging (approval gate) ----------------
+  - stage: PromoteStaging
+    dependsOn: SecurityScan
+    jobs:
+      - deployment: DeployStaging
+        environment: "staging"   # requires approvals configured in Azure DevOps
+        pool:
+          vmImage: "ubuntu-latest"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Retag dev -> stage in ACR (no rebuild)"
+                  inputs:
+                    azureSubscription: "your-azure-subscription-connection"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az acr import \
+                        --name $(acrLoginServer) \
+                        --source $(imageRepository):$(appVersion)-$(gitCommit) \
+                        --image $(imageRepository):stage \
+                        --force
+
+  # ---------------- Stage 5: Promote to Prod-Green (approval gate) ----------------
+  - stage: PromoteProdGreen
+    dependsOn: PromoteStaging
+    jobs:
+      - deployment: DeployProdGreen
+        environment: "production"   # requires approvals configured in Azure DevOps
+        pool:
+          vmImage: "ubuntu-latest"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Retag stage -> prod-green in ACR"
+                  inputs:
+                    azureSubscription: "your-azure-subscription-connection"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az acr import \
+                        --name $(acrLoginServer) \
+                        --source $(imageRepository):stage \
+                        --image $(imageRepository):prod-green \
+                        --force
+                - script: |
+                    echo "Trigger canary ramp on your AKS/App Service/VM fleet here"
+                    echo "e.g. kubectl argo rollouts set-canary-weight fraud-app 10"
+                  displayName: "Kick off canary rollout (10% -> 25% -> 50% -> 100%)"

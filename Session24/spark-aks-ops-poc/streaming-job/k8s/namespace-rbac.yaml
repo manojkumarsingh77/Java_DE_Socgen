@@ -1,0 +1,25 @@
+# kubectl apply -f namespace-rbac.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spark-ops-poc
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-driver-sa
+  namespace: spark-ops-poc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-driver-rb
+  namespace: spark-ops-poc
+subjects:
+  - kind: ServiceAccount
+    name: spark-driver-sa
+    namespace: spark-ops-poc
+roleRef:
+  kind: ClusterRole
+  name: edit
+  apiGroup: rbac.authorization.k8s.io

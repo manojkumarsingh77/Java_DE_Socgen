@@ -1,0 +1,6 @@
+target/
+data/
+run-configs/.env
+.idea/
+*.iml
+.DS_Store

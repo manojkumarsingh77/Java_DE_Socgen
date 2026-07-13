@@ -1,0 +1,28 @@
+“It worked in Staging but broke in Prod” - Each environment was built/compiled separately - environment drift
+
+DEV --> Staging --> Prod
+
+CI(BUILD --> VERSION --> SECURITY SCAN --> PUSH) DEV
+
+CD(Stage: APPROVAL GATE --> BLUE/GREEN deploy --> health check) Stage / PROD
+
+health check --> Promotes
+
+Record - audit trail
+
+                    ┌─────────────┐
+                    │  BLUE (v1.0) │ ◄── LIVE (100%)
+                    └─────────────┘
+
+                    ┌─────────────┐
+                    │ GREEN (v2.0) │ ◄── Testing only
+                    └─────────────┘
+
+                                        ┌─────────────┐
+                                        │ GREEN (v2.0) │ ◄── LIVE
+                                        └─────────────┘
+
+                                        ┌─────────────┐
+                                        │ BLUE (v1.0)  │ ◄── Standby
+                                        └─────────────┘
+

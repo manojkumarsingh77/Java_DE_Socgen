@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and fill in the real values.
+# terraform.tfvars is gitignored by default convention — do NOT commit it if it
+# ever contains secrets (it doesn't here, but keep the habit).
+
+subscription_id = "00000000-0000-0000-0000-000000000000" # az account show --query id -o tsv
+
+# Replace <init> with your initials — must be globally unique across all of Azure.
+acr_name = "acrsparkfundjs"

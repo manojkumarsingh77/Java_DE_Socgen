@@ -1,0 +1,50 @@
+# =============================================================================
+# IntelliJ IDEA Run/Debug Configuration -> VM Options
+# Target: macOS (Apple Silicon M1 Max, ARM64) | Java 17 Temurin
+# Paste this ENTIRE block (as a single line, or as-is if IntelliJ's VM options
+# field accepts multi-line - IntelliJ 2023.x+ supports pasting with line breaks)
+# into: Run > Edit Configurations > <your App config> > VM options
+# =============================================================================
+
+-Xms2g
+-Xmx6g
+-XX:+UseG1GC
+-Dspark.master=local[*]
+-DAPP_ENV=dev
+-DAZURE_MODE=false
+
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens=java.base/java.io=ALL-UNNAMED
+--add-opens=java.base/java.net=ALL-UNNAMED
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/java.util=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+--add-opens=java.base/sun.security.action=ALL-UNNAMED
+--add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+
+# -----------------------------------------------------------------------------
+# WHY these --add-opens flags are mandatory on Java 17:
+# Spark's Tungsten memory manager, Kryo serializer, and closure-cleaning
+# reflection utilities access internal JDK fields directly. Java 9+'s
+# module system (JPMS) strong encapsulation blocks this by default, causing
+# `InaccessibleObjectException` at runtime. Spark 3.x officially requires
+# these exact --add-opens flags for Java 17 support (see Spark docs:
+# "Running Spark on Java 17"). Without them, local[*] execution fails
+# immediately during SparkSession.builder().getOrCreate().
+# -----------------------------------------------------------------------------
+
+# NOTE for Apple Silicon (M1 Max) specifically:
+# - No native Hadoop `winutils.exe` is required on macOS (that is a
+#   Windows-only requirement, see the Windows VM options file).
+# - Netty/RocksDB native binaries resolve automatically to the
+#   `osx-aarch_64` classifier via Maven's standard classifier resolution;
+#   NO manual profile or -Djava.library.path override is needed as long as
+#   you are on Homebrew's Temurin 17 JDK (`brew install --cask temurin17`)
+#   and NOT running under Rosetta 2 emulation. Verify with:
+#     `java -version` should print nothing about "x86_64" translation.

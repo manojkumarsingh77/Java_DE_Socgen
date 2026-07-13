@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.fintechpay</groupId>
+    <artifactId>fintechpay-jvm-demo</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>FintechPay JVM Flags Demo</name>
+    <description>
+        Retail Banking demo illustrating JVM Flags in Docker,
+        Heap vs Container Limits, and CPU Throttling in AKS.
+    </description>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- SLF4J + Logback for structured logging (mimics production setup) -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.4.11</version>
+        </dependency>
+
+        <!-- JUnit 5 for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Compiler plugin enforcing Java 17 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                    <!-- Enable preview features if needed -->
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <!-- Exec plugin to run BankingApp directly from Maven -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>com.fintechpay.BankingApp</mainClass>
+                    <!--
+                        CONCEPT 1 & 2 — JVM FLAGS FOR DOCKER + HEAP vs CONTAINER LIMITS:
+                        These are the recommended flags for running this service in Docker/AKS.
+                        When running locally in IntelliJ, these are set in Run Configuration
+                        VM Options. In Docker/AKS they go in JAVA_OPTS or the pod spec.
+
+                        Key flags explained:
+                        -XX:+UseContainerSupport         → tells JVM to read cgroup limits (ON by default in Java 17)
+                        -XX:MaxRAMPercentage=75.0         → heap = 75% of container RAM (not hardcoded -Xmx)
+                        -XX:InitialRAMPercentage=50.0     → start heap at 50% to avoid initial GC pressure
+                        -XX:MinRAMPercentage=25.0         → minimum heap floor for tiny containers
+                        -XX:ActiveProcessorCount=2        → tell JVM it has 2 CPUs (matches AKS cpu limit)
+                        -XX:+UseG1GC                     → G1 is ideal for low-latency banking workloads
+                        -XX:MaxGCPauseMillis=200          → GC pause budget = 200ms (fits 100ms CFS period)
+                        -XX:InitiatingHeapOccupancyPercent=35 → trigger GC early to avoid heap exhaustion
+                        -XX:+PrintFlagsFinal              → dump all active JVM flags (great for debugging)
+                        -Xlog:gc*:file=/logs/gc.log       → GC log for AKS analysis
+                    -->
+                    <jvmArgs>
+                        <jvmArg>-XX:+UseContainerSupport</jvmArg>
+                        <jvmArg>-XX:MaxRAMPercentage=75.0</jvmArg>
+                        <jvmArg>-XX:InitialRAMPercentage=50.0</jvmArg>
+                        <jvmArg>-XX:ActiveProcessorCount=2</jvmArg>
+                        <jvmArg>-XX:+UseG1GC</jvmArg>
+                        <jvmArg>-XX:MaxGCPauseMillis=200</jvmArg>
+                        <jvmArg>-XX:InitiatingHeapOccupancyPercent=35</jvmArg>
+                        <jvmArg>-verbose:gc</jvmArg>
+                    </jvmArgs>
+                </configuration>
+            </plugin>
+
+            <!-- Fat JAR for Docker packaging -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.fintechpay.BankingApp</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
+                        <goals><goal>single</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

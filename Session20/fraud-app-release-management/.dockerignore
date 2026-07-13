@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+*.iml
+target
+output
+*.log
+.DS_Store
+README.md

@@ -1,0 +1,7 @@
+target/
+.idea/
+*.iml
+output/*
+!output/.gitkeep
+.DS_Store
+*.log

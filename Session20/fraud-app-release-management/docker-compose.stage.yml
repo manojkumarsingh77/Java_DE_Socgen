@@ -1,0 +1,13 @@
+# STAGE environment: deploys the SAME artifact that was built and scanned in
+# Dev - pulled from the registry and retagged "stage" by
+# scripts/05-promote-stage.sh. Nothing is rebuilt here (GitOps principle:
+# promote the immutable artifact, don't rebuild per environment).
+services:
+  fraud-app-stage:
+    image: localhost:5000/fraud-app:stage
+    container_name: fraud-app-stage
+    environment:
+      APP_ENV: stage
+      DEPLOY_SLOT: stage
+    ports:
+      - "8082:8080"

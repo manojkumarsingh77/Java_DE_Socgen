@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.training</groupId>
+  <artifactId>spark-cicd-gitops-demo</artifactId>
+  <name>CI/CD and GitOps for Spark - Training Demo</name>
+  <version>1.0.0</version>
+  <build>
+    <finalName>${project.artifactId}-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer />
+                <transformer>
+                  <manifestEntries>
+                    <Main-Class>${main.class}</Main-Class>
+                    <Add-Opens>java.base/java.lang java.base/java.lang.invoke java.base/java.lang.reflect
+                      java.base/java.io java.base/java.net java.base/java.nio java.base/java.util
+                      java.base/java.util.concurrent java.base/java.util.concurrent.atomic
+                      java.base/sun.nio.ch java.base/sun.nio.cs java.base/sun.security.action
+                      java.base/sun.util.calendar</Add-Opens>
+                  </manifestEntries>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <properties>
+    <scala.binary.version>2.12</scala.binary.version>
+    <main.class>com.training.gitops.App</main.class>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <spark.version>3.5.1</spark.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+</project>

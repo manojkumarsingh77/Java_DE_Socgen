@@ -1,0 +1,121 @@
+groups:
+
+  # ==========================================================================
+  # GOLDEN SIGNAL ALERTS - one alert per signal, each with a sensible "for:"
+  # duration so a single noisy scrape can't fire it (the #1 cheap win against
+  # alert fatigue: don't alert on a single data point, alert on a SUSTAINED
+  # condition).
+  # ==========================================================================
+  - name: golden-signal-alerts
+    rules:
+
+      - alert: HighErrorRateWarning
+        expr: >
+          (
+            sum(rate(orders_processing_errors_total[5m]))
+            /
+            (sum(rate(orders_consumed_total[5m])) + sum(rate(orders_processing_errors_total[5m])))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: order-platform
+        annotations:
+          summary: "Order processing error rate above 5%"
+          description: >
+            Error rate has been above 5% for at least 5 minutes (current value: {{ $value | humanizePercentage }}).
+            This is a ticket-level (non-paging) alert - see alertmanager routing.
+          runbook_url: "https://internal-wiki.example.com/runbooks/order-processing-errors"
+
+      - alert: HighLatencyP99
+        expr: >
+          histogram_quantile(0.99, sum(rate(orders_processing_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+          team: order-platform
+        annotations:
+          summary: "P99 order processing latency above 2 seconds"
+          description: "P99 latency is {{ $value }}s, sustained for 10 minutes."
+          runbook_url: "https://internal-wiki.example.com/runbooks/order-processing-latency"
+
+      - alert: ConsumerLagHigh
+        expr: orders_processing_staleness_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+          team: order-platform
+        annotations:
+          summary: "Order stream processor is falling behind"
+          description: >
+            Processing staleness (event-time vs wall-clock) is {{ $value }}s - the consumer
+            cannot keep up with producer traffic. Treat as a saturation signal.
+          runbook_url: "https://internal-wiki.example.com/runbooks/consumer-lag"
+
+      - alert: KafkaConsumerGroupLagHigh
+        expr: sum(kafka_consumergroup_lag) by (consumergroup, topic) > 1000
+        for: 2m
+        labels:
+          severity: warning
+          team: order-platform
+        annotations:
+          summary: "Kafka consumer group {{ $labels.consumergroup }} lag > 1000 messages"
+          description: "Real broker-reported lag for topic {{ $labels.topic }} is {{ $value }} messages."
+          runbook_url: "https://internal-wiki.example.com/runbooks/consumer-lag"
+
+      # This is the INHIBITION SOURCE referenced in alertmanager.yml: when a whole
+      # service is down, the alerts above are just symptoms of the same root cause and
+      # are suppressed downstream - one alert instead of four for the same incident.
+      - alert: ServiceDown
+        expr: up{job=~"order-producer|order-stream-processor"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: order-platform
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus has failed to scrape {{ $labels.job }} for 1 minute."
+          runbook_url: "https://internal-wiki.example.com/runbooks/service-down"
+
+  # ==========================================================================
+  # SLO BURN-RATE ALERT (Google SRE Workbook style, simplified)
+  # Target: 99.9% successful-processing SLO measured over 30 days
+  #         (error budget = 0.1% of requests may fail).
+  #
+  # A 14.4x burn rate sustained across BOTH a 5-minute AND a 1-hour window means
+  # "at this rate we will exhaust ~2% of the monthly error budget within an hour" -
+  # exactly the classic page-worthy threshold from the SRE workbook's multi-window
+  # multi-burn-rate table.
+  #
+  # ALERT FATIGUE MITIGATION, explicitly: requiring BOTH windows to agree means a
+  # five-minute blip alone never pages anyone - only sustained, budget-threatening
+  # degradation does. This is the single most effective technique in this file for
+  # cutting page volume without missing real incidents.
+  # ==========================================================================
+  - name: slo-burn-rate-alerts
+    rules:
+
+      - alert: ErrorBudgetBurnFastPage
+        expr: >
+          (
+            sum(rate(orders_processing_errors_total[5m]))
+            /
+            (sum(rate(orders_consumed_total[5m])) + sum(rate(orders_processing_errors_total[5m])))
+          ) > (14.4 * 0.001)
+          and
+          (
+            sum(rate(orders_processing_errors_total[1h]))
+            /
+            (sum(rate(orders_consumed_total[1h])) + sum(rate(orders_processing_errors_total[1h])))
+          ) > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          team: order-platform
+        annotations:
+          summary: "Fast error-budget burn against the 99.9% order-processing SLO"
+          description: >
+            Both the 5m and 1h error-rate windows exceed a 14.4x burn-rate threshold.
+            At this rate the 30-day error budget would be exhausted in roughly 2 days.
+            This pages on-call (see alertmanager.yml route for severity=critical).
+          runbook_url: "https://internal-wiki.example.com/runbooks/slo-burn-rate"

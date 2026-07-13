@@ -1,0 +1,57 @@
+# =============================================================================
+# TOPIC: Node Pools
+# Referenced by spark.kubernetes.executor.podTemplateFile in App.java.
+# Ensures executor pods land ONLY on the environment-tagged node pool via
+# nodeSelector + matching toleration for that pool's NoSchedule taint.
+# Templated placeholders {{AGENT_POOL}} / {{ENV_TAINT_VALUE}} are substituted
+# per-environment by the SparkApplication CRD (see k8s/06-sparkapplication-*.yaml)
+# using Spark's ConfigMap-mounted template mechanism - in practice, maintain
+# one rendered copy per environment: executor-pod-template-dev.yaml,
+# executor-pod-template-staging.yaml, executor-pod-template-prod.yaml.
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    spark-role: executor
+    azure.workload.identity/use: "true"
+spec:
+  serviceAccountName: spark-workload-identity-sa
+  nodeSelector:
+    agentpool: dev-userpool
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "dev-spark"
+      effect: "NoSchedule"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 50
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: spark-role
+                  operator: In
+                  values: ["executor"]
+            topologyKey: "kubernetes.io/hostname"
+  containers:
+    - name: spark-kubernetes-executor
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "10Gi"
+      volumeMounts:
+        - name: secrets-store-inline
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+  volumes:
+    - name: secrets-store-inline
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: "banking-dev-adls-secrets"

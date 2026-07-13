@@ -1,0 +1,24 @@
+# --conf spark.kubernetes.executor.podTemplateFile=<this file>
+# Container name recognized by Spark for executors: "spark-kubernetes-executor"
+# (verify against your exact Spark 3.5.x patch release's docs).
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    demoapp: pos-streaming-executor
+spec:
+  containers:
+    - name: spark-kubernetes-executor
+      resources:
+        requests:
+          cpu: "1"
+          memory: "1536Mi"
+        limits:
+          cpu: "1500m"
+          memory: "2048Mi"
+      # Sized deliberately close to spark.executor.memory (set on the
+      # spark-submit command line) plus the executor memory overhead
+      # (spark.executor.memoryOverhead, default = max(384Mi, 10% of
+      # executor memory)) — the pod memory LIMIT must exceed
+      # executor memory + overhead, or the kubelet OOMKills the executor
+      # before Spark's own memory manager ever sees pressure.

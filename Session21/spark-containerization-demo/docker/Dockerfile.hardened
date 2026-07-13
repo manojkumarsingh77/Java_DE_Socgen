@@ -1,0 +1,63 @@
+# =============================================================================
+# ACT 3 - "THE HARDENED, PRODUCTION-GRADE IMAGE"
+# =============================================================================
+# Builds on Act 2's multi-stage approach and additionally solves:
+#   - Runs as ROOT by default            -> fixed: dedicated non-root "spark" user
+#   - No baked-in container-aware JVM defaults -> fixed: sane JAVA_OPTS ENV default
+#     (still fully overridable per-environment via `-e JAVA_OPTS=...`, see
+#     docker-compose.yml and DEMO-GUIDE.md for the JVM Tuning topic)
+#   - No health signal for orchestrators -> fixed: HEALTHCHECK
+#   - No image metadata                  -> fixed: OCI labels
+#   - Floating/unpinned base tags         -> fixed: explicit, documented tag
+#   - Package manager residue             -> fixed: apt cache cleaned in same layer
+#
+# Combine with `docker run --read-only --tmpfs /tmp --cap-drop=ALL
+# --security-opt no-new-privileges:true` (or the docker-compose.yml equivalents)
+# for defense-in-depth that a Dockerfile alone cannot enforce - the RUNTIME flags
+# matter as much as the build. This is deliberately called out in DEMO-GUIDE.md.
+#
+# Build: docker build -f docker/Dockerfile.hardened -t spark-training/demo:hardened .
+# Scan : trivy image spark-training/demo:hardened   (optional, if learners have trivy)
+# =============================================================================
+
+# ---------- Stage 1: builder (identical pattern to Act 2) ----------
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
+WORKDIR /build
+COPY pom.xml .
+RUN mvn -B dependency:go-offline
+COPY src ./src
+RUN mvn -B clean package -DskipTests
+
+# ---------- Stage 2: hardened runtime ----------
+FROM eclipse-temurin:17-jre-jammy AS runtime
+
+LABEL org.opencontainers.image.title="spark-containerization-demo" \
+      org.opencontainers.image.description="Hardened runtime image - Containerization for Data Platforms training demo" \
+      org.opencontainers.image.source="https://example.invalid/training/spark-containerization-demo" \
+      org.opencontainers.image.licenses="Educational-Use"
+
+# Non-root user with no login shell and no home-dir surprises.
+RUN groupadd --system spark \
+ && useradd  --system --gid spark --home-dir /app --shell /usr/sbin/nologin spark \
+ # Remove apt package lists to shrink the layer and reduce residual attack surface.
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder --chown=spark:spark /build/target/spark-containerization-demo-1.0.0.jar app.jar
+COPY --chown=spark:spark docker/entrypoint.sh entrypoint.sh
+RUN chmod 0550 entrypoint.sh
+
+# Container-aware JVM defaults baked in (still overridable at `docker run` time).
+# See DEMO-GUIDE.md "JVM Tuning in Containers" for what each flag does and why.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError -XX:+UseContainerSupport"
+ENV DEMO_MODE="diagnostics"
+
+# Drop privileges for every subsequent instruction and at runtime.
+USER spark:spark
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["java", "-version"]
+
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["diagnostics"]

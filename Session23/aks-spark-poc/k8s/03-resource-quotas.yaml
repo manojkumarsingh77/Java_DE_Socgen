@@ -1,0 +1,62 @@
+# =============================================================================
+# TOPIC: Multi-Env Isolation (compute quota boundary)
+# Prevents a runaway dev job from consuming cluster-wide capacity meant for
+# staging/prod - a real incident pattern when namespaces share a Cluster
+# Autoscaler-managed node pool without quotas.
+# =============================================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: banking-dev-quota
+  namespace: banking-dev
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 64Gi
+    limits.cpu: "32"
+    limits.memory: 128Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: banking-staging-quota
+  namespace: banking-staging
+spec:
+  hard:
+    requests.cpu: "32"
+    requests.memory: 128Gi
+    limits.cpu: "64"
+    limits.memory: 256Gi
+    pods: "30"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: banking-prod-quota
+  namespace: banking-prod
+spec:
+  hard:
+    requests.cpu: "128"
+    requests.memory: 512Gi
+    limits.cpu: "256"
+    limits.memory: 1024Gi
+    pods: "60"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: banking-dev-limitrange
+  namespace: banking-dev
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: "1"
+        memory: 2Gi
+      default:
+        cpu: "2"
+        memory: 4Gi
+      max:
+        cpu: "8"
+        memory: 16Gi

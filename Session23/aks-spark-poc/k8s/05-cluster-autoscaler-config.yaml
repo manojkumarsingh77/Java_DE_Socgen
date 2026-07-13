@@ -1,0 +1,71 @@
+# =============================================================================
+# TOPIC: Autoscaler Internals
+# AKS Cluster Autoscaler profile settings - applied at the CLUSTER level
+# (not a namespaced object). Configure via:
+#
+#   az aks update \
+#     --resource-group rg-banking-spark-poc \
+#     --name aks-banking-poc \
+#     --cluster-autoscaler-profile \
+#         scan-interval=10s \
+#         scale-down-delay-after-add=10m \
+#         scale-down-unneeded-time=10m \
+#         scale-down-utilization-threshold=0.5 \
+#         max-graceful-termination-sec=600 \
+#         skip-nodes-with-local-storage=false \
+#         expander=least-waste
+#
+# This file documents each parameter's mechanical effect for the training
+# session (Stage 1: Core Technical Concept reference material).
+# =============================================================================
+
+# scan-interval: 10s
+#   How often the autoscaler control loop re-evaluates cluster state. Every
+#   10s it lists all Pending pods, checks their FailedScheduling events, and
+#   simulates whether a new node (per node pool VMSS template) would allow
+#   the pod to schedule (bin-packing simulation using the pod's requests).
+
+# scale-down-delay-after-add: 10m
+#   After a scale-UP event, the autoscaler will not consider scaling DOWN
+#   for 10 minutes - prevents thrashing when Spark's dynamic allocation
+#   ramps executors up and down rapidly across shuffle stages.
+
+# scale-down-unneeded-time: 10m
+#   A node must be "unneeded" (utilization below threshold, no unmovable
+#   pods) continuously for 10 minutes before the autoscaler cordons and
+#   drains it. This absorbs Spark's own executorIdleTimeout (60s in
+#   App.java) so we do not tear down a node the instant one executor goes
+#   idle mid-job.
+
+# scale-down-utilization-threshold: 0.5
+#   A node is a scale-down CANDIDATE only if both CPU and memory requested
+#   by its pods are below 50% of allocatable capacity.
+
+# expander: least-waste
+#   When MULTIPLE node pools could satisfy a pending pod (e.g. both
+#   devuserpool and stagingpool have spare quota), the "least-waste"
+#   expander picks the node pool whose VM SKU would leave the LEAST unused
+#   CPU/memory after scheduling - avoiding provisioning an oversized
+#   E16s_v5 node for a pod that only needs 4 cores.
+
+# max-graceful-termination-sec: 600
+#   Gives Spark executors up to 10 minutes to finish in-flight shuffle
+#   writes / decommission gracefully (spark.storage.decommission.enabled)
+#   before the autoscaler force-terminates the underlying VM during
+#   scale-down.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-autoscaler-profile-reference
+  namespace: kube-system
+data:
+  scan-interval: "10s"
+  scale-down-delay-after-add: "10m"
+  scale-down-unneeded-time: "10m"
+  scale-down-utilization-threshold: "0.5"
+  expander: "least-waste"
+  max-graceful-termination-sec: "600"
+  note: "This ConfigMap is DOCUMENTATION ONLY. The real autoscaler profile is
+         cluster-scoped and set via 'az aks update --cluster-autoscaler-profile',
+         not via a Kubernetes object."

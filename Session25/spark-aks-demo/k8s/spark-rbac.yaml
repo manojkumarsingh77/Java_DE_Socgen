@@ -1,0 +1,63 @@
+---
+# Dedicated namespace so Spark jobs are isolated from other workloads,
+# and so cleanup is a single `kubectl delete namespace spark-jobs`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spark-jobs
+  labels:
+    purpose: spark-on-aks-training
+
+---
+# Identity the Spark DRIVER pod runs as. The driver, once running,
+# calls the Kubernetes API directly to create/watch/delete executor
+# pods and a headless Service for driver<->executor communication —
+# it needs its own RBAC permissions to do that, separate from your
+# personal kubectl/az credentials.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-sa
+  namespace: spark-jobs
+
+---
+# Minimum permission set required by the Spark Kubernetes scheduler
+# backend to launch and manage executor pods for this job. Scoped to
+# the spark-jobs namespace only (Role, not ClusterRole) — the driver
+# cannot touch resources outside this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-driver-role
+  namespace: spark-jobs
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-driver-rolebinding
+  namespace: spark-jobs
+subjects:
+  - kind: ServiceAccount
+    name: spark-sa
+    namespace: spark-jobs
+roleRef:
+  kind: Role
+  name: spark-driver-role
+  apiGroup: rbac.authorization.k8s.io

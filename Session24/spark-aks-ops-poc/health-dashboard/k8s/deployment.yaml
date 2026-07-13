@@ -1,0 +1,57 @@
+# This is the object `kubectl rollout` commands operate on in Step 7 of
+# LAB_GUIDE.md. `image` below is intentionally the "v1" tag to start —
+# Step 7 walks through bumping it to "v2" and watching a real, textbook
+# Kubernetes rolling update (maxSurge/maxUnavailable across 3 replicas).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streaming-health-dashboard
+  namespace: spark-ops-poc
+  labels:
+    app: streaming-health-dashboard
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # at most 1 extra pod above `replicas` during rollout
+      maxUnavailable: 0  # never drop below 3 healthy pods during rollout
+  selector:
+    matchLabels:
+      app: streaming-health-dashboard
+  template:
+    metadata:
+      labels:
+        app: streaming-health-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: <UNIQUE_ACR_NAME>.azurecr.io/streaming-health-dashboard:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DRIVER_UI_BASE_URL
+              value: "http://pos-streaming-driver-ui:4040"
+            - name: APP_VERSION
+              value: "v1"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10

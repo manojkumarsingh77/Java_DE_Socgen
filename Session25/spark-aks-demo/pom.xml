@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.training</groupId>
+  <artifactId>spark-aks-demo</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- MUST match the base image tag in the Dockerfile exactly, or the
+         driver/executor classpath (image) and the app jar (compiled here)
+         will disagree on Spark internals and fail at runtime. -->
+    <spark.version>3.5.3</spark.version>
+    <scala.binary.version>2.12</scala.binary.version>
+  </properties>
+
+  <dependencies>
+    <!-- Deliberately COMPILE scope (the Maven default), not "provided".
+         This has ZERO effect on what ends up in the built jar or on the
+         Docker/AKS runtime: maven-jar-plugin never bundles dependencies
+         into the jar regardless of scope (no shade/assembly plugin is
+         used), and the container always runs against Spark's own
+         /opt/spark/jars at /opt/spark, not anything packaged here. The
+         jar produced by `mvn package` is identical either way — still a
+         few KB, still just your compiled classes.
+
+         What DOES change: with "compile" scope, IntelliJ's default Run
+         Configuration puts Spark (and its transitive slf4j-api) on the
+         runtime classpath automatically. With "provided", IntelliJ only
+         does that if you separately enable "Include dependencies with
+         'Provided' scope" in Modify Options — an easy setting to miss,
+         and the cause of NoClassDefFoundError: org/slf4j/LoggerFactory
+         if it's off. Using "compile" removes that footgun entirely. -->
+    <dependency>
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-core_${scala.binary.version}</artifactId>
+      <version>${spark.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-sql_${scala.binary.version}</artifactId>
+      <version>${spark.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${project.artifactId}-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+
+      <!-- Not strictly required for spark-submit -class, but lets you
+           also run `java -jar` locally against a Spark install on your
+           classpath, and is good practice for any distributable jar. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.training.spark.aks.RetailFraudVelocityJob</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

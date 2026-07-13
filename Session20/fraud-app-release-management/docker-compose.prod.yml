@@ -1,0 +1,47 @@
+# PROD environment: Blue/Green pair behind Nginx.
+#   - fraud-app-blue  = current stable release (tag: prod-blue)
+#   - fraud-app-green = release candidate under canary rollout (tag: prod-green)
+# Neither app container publishes a host port directly - all traffic goes
+# through Nginx, whose upstream weights (nginx/conf.d/upstream.conf) control
+# the canary split. Only Nginx's port 8080 is exposed to the host.
+services:
+  fraud-app-blue:
+    image: localhost:5000/fraud-app:prod-blue
+    container_name: fraud-app-blue
+    environment:
+      APP_ENV: prod
+      DEPLOY_SLOT: blue
+    expose:
+      - "8080"
+    networks:
+      - fraudnet
+
+  fraud-app-green:
+    image: localhost:5000/fraud-app:prod-green
+    container_name: fraud-app-green
+    environment:
+      APP_ENV: prod
+      DEPLOY_SLOT: green
+    expose:
+      - "8080"
+    networks:
+      - fraudnet
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: fraud-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - fraud-app-blue
+      - fraud-app-green
+    networks:
+      - fraudnet
+
+networks:
+  fraudnet:
+    name: fraudnet
+    driver: bridge

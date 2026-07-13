@@ -1,0 +1,50 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: order-services
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: order-services
+          __path__: /var/log/app/*.json
+
+    pipeline_stages:
+      # Parse the structured JSON line our Logback/logstash-logback-encoder config emits.
+      - json:
+          expressions:
+            level: level
+            service: service
+            message: message
+            correlationId: correlationId
+            traceId: traceId
+            orderId: orderId
+            ts: '"@timestamp"'
+
+      # LOG INDEXING STRATEGY (the key teaching point of this file):
+      # Only "level" and "service" become Loki LABELS, i.e. part of the index.
+      # Both have a small, bounded set of possible values (a handful of log levels,
+      # a handful of services) - exactly what an index should be built on.
+      #
+      # correlationId, traceId, and orderId are deliberately NOT turned into labels
+      # here, even though they are exactly what you search by during an incident.
+      # Each one is effectively unique per request, so indexing them as labels would
+      # make Loki create a new time series PER REQUEST - unbounded index growth
+      # ("cardinality explosion"), which is the most common real-world Loki outage
+      # cause. Instead they stay as plain JSON fields, queried at read-time with
+      # LogQL, e.g.:
+      #   {service="order-stream-processor"} | json | correlationId="<id>"
+      - labels:
+          level:
+          service:
+
+      - timestamp:
+          source: ts
+          format: RFC3339

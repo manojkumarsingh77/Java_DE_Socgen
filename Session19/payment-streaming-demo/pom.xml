@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ===================================================================
+         WHY a single Maven module for all 5 apps?
+         Each "application" the demo needs (Topic Setup, Producer, Spark
+         Streaming Consumer, Incident Investigator, Dashboard) is just a
+         different class with a main() method. Putting them in ONE module
+         means IntelliJ builds ONE classpath, and you switch between apps
+         simply by picking a different "Run Configuration" (main class).
+         This is the simplest, least error-prone setup for a classroom demo.
+         =================================================================== -->
+    <groupId>com.bank.retail</groupId>
+    <artifactId>payment-streaming-demo</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <!-- Java 17 as requested. Spark 3.5.x officially supports Java 17. -->
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Spark 3.5.1 + Scala 2.12 build -> required for Delta Lake 3.2.0 compatibility -->
+        <spark.version>3.5.1</spark.version>
+        <scala.binary.version>2.12</scala.binary.version>
+
+        <!-- Delta Lake 3.2.0 is the version certified against Spark 3.5.x -->
+        <delta.version>3.2.0</delta.version>
+
+        <!-- Confluent Platform 7.5.0 bundles Apache Kafka 3.5.1 broker.
+             We pin the client to the SAME version to avoid protocol surprises. -->
+        <kafka.clients.version>3.5.1</kafka.clients.version>
+
+        <!-- Jackson version aligned with the Jackson version Spark 3.5.1 ships,
+             to avoid two different Jackson versions fighting on the classpath
+             (a very common, very confusing real-world Spark error). -->
+        <jackson.version>2.15.2</jackson.version>
+    </properties>
+
+    <!-- dependencyManagement forces ALL transitive pulls of these libraries
+         (e.g. Spark pulling its own kafka-clients / jackson) onto the exact
+         versions we picked above, instead of "whatever the resolver feels
+         like today". This single block prevents 90% of NoSuchMethodError /
+         NoClassDefFoundError problems you'd otherwise hit at runtime. -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-clients</artifactId>
+                <version>${kafka.clients.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- ============== SPARK CORE + SQL ==============
+             spark-core: the RDD / scheduler / executor engine.
+             spark-sql : Dataset/DataFrame API, SQL functions, Structured
+                         Streaming engine (this is what we actually code against). -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- The Kafka <-> Spark Structured Streaming connector.
+             This is what gives us .format("kafka") in readStream/writeStream. -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql-kafka-0-10_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-token-provider-kafka-0-10_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- ============== DELTA LAKE ==============
+             Gives us .format("delta") as a write/read sink: an ACID,
+             versioned table format on top of plain files. This is our
+             "data lake" landing zone for processed payments. -->
+        <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-spark_${scala.binary.version}</artifactId>
+            <version>${delta.version}</version>
+        </dependency>
+
+        <!-- ============== KAFKA CLIENT (raw) ==============
+             Used directly (NOT through Spark) by App1 (topic admin) and
+             App2 (producer), which are plain Java apps, not Spark jobs. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
+
+        <!-- ============== JSON (Jackson) ==============
+             Used by App2 (producer) to turn Java objects into the JSON
+             string we publish to Kafka, and by the model classes generally. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- ============== LOGGING ==============
+             Spark 3.5 ships Log4j2 internally. We deliberately do NOT add
+             a competing SLF4J binding (e.g. Logback) - that classic mistake
+             causes "multiple bindings" warnings and unpredictable log output.
+             We just supply our OWN log4j2.properties (see src/main/resources)
+             to control formatting, and code against the log4j2 API directly
+             for structured, correlationId-tagged log lines. -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.20.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>payment-streaming-demo</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

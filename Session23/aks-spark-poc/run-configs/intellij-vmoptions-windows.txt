@@ -1,0 +1,50 @@
+# =============================================================================
+# IntelliJ IDEA Run/Debug Configuration -> VM Options
+# Target: Windows 11 (x64) | Java 17 Temurin
+# Paste this ENTIRE block into: Run > Edit Configurations > <your App config>
+#                                > VM options
+# =============================================================================
+
+-Xms2g
+-Xmx6g
+-XX:+UseG1GC
+-Dspark.master=local[*]
+-DAPP_ENV=dev
+-DAZURE_MODE=false
+-Dhadoop.home.dir=C:\hadoop
+
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens=java.base/java.io=ALL-UNNAMED
+--add-opens=java.base/java.net=ALL-UNNAMED
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/java.util=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+--add-opens=java.base/sun.security.action=ALL-UNNAMED
+--add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+
+# -----------------------------------------------------------------------------
+# WHY -Dhadoop.home.dir=C:\hadoop is mandatory on Windows:
+# Spark bundles Hadoop client libraries even for local[*] execution (used by
+# DataFrameWriter for the Hadoop FileSystem abstraction, even against plain
+# local disk). On Windows, Hadoop's FileUtil looks for `winutils.exe` and
+# `hadoop.dll` under %HADOOP_HOME%\bin to perform POSIX-style file permission
+# checks. Without this, you get:
+#   java.io.IOException: Could not locate executable null\bin\winutils.exe
+#
+# SETUP STEPS (one-time, see README.md Section "Windows Prerequisites"):
+#   1. Create C:\hadoop\bin
+#   2. Download winutils.exe + hadoop.dll matching Hadoop 3.3.6 from:
+#      https://github.com/kontext-tech/winutils (community-maintained mirror
+#      of the archived steveloughran/winutils repo) - place both files in
+#      C:\hadoop\bin
+#   3. Add C:\hadoop\bin to your Windows PATH environment variable (System
+#      Properties > Environment Variables > Path > New)
+#   4. Restart IntelliJ IDEA fully (not just the run config) so it picks up
+#      the updated PATH.
+# -----------------------------------------------------------------------------

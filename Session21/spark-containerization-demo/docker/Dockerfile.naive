@@ -1,0 +1,30 @@
+# =============================================================================
+# ACT 1 - "THE PROBLEM"  (do NOT do this in production)
+# =============================================================================
+# This is a deliberately naive, single-stage Dockerfile. Show learners this FIRST,
+# build it, and inspect it with `docker images` / `docker history` / `docker run
+# --user root ... whoami` to surface every problem the rest of the demo solves:
+#
+#   1. Final image contains the full JDK + Maven + the entire ~/.m2 dependency
+#      cache + all source code + .git history -> hundreds of MB to >1GB, most of
+#      which serves no purpose at runtime.
+#   2. Runs as root by default (no USER instruction) -> a container escape from
+#      this process gets root inside the container immediately.
+#   3. No JVM tuning at all -> JVM ergonomics decide heap/CPU sizing with no
+#      awareness of how this container will be constrained in production.
+#   4. No resource limits declared or documented anywhere.
+#   5. `latest`-style floating base tag risk (here pinned for reproducibility of
+#      the *demo*, but note for learners this is still the "kitchen sink" image).
+#
+# Build:  docker build -f docker/Dockerfile.naive -t spark-training/demo:naive .
+# Size :  docker images spark-training/demo:naive
+# =============================================================================
+FROM maven:3.9.6-eclipse-temurin-17
+
+WORKDIR /app
+COPY . .
+
+RUN mvn -B clean package -DskipTests
+
+# No USER instruction -> runs as root. No JAVA_OPTS. No HEALTHCHECK.
+CMD ["java", "-jar", "target/spark-containerization-demo-1.0.0.jar", "diagnostics"]

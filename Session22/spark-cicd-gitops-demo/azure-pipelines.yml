@@ -1,0 +1,109 @@
+# =============================================================================
+# Azure DevOps equivalent of .github/workflows/ci.yml + cd.yml combined into
+# one multi-stage pipeline - shown separately because ACR-specific tasks
+# (AzureCLI@2 with `az acr build` / `az acr task`) are more native here than
+# in GitHub Actions. Stage names map directly to CIPipeline.java / CDPipeline.java.
+# =============================================================================
+trigger:
+  branches:
+    include: [main]
+
+variables:
+  acrName: 'myacr'
+  imageRepo: 'inventory-analytics'
+  vmImage: 'ubuntu-latest'
+
+stages:
+
+  # === CIPipeline: BUILD -> VERSION -> SCAN -> PUSH ===
+  - stage: CI
+    jobs:
+      - job: BuildScanPush
+        pool: { vmImage: $(vmImage) }
+        steps:
+          - task: JavaToolInstaller@0
+            inputs: { versionSpec: '17', jdkArchitectureOption: 'x64', jdkSourceOption: 'PreInstalled' }
+
+          - script: |
+              mvn -B clean package -DskipTests
+              java -jar target/spark-cicd-gitops-demo-1.0.0.jar job
+            displayName: 'Build + smoke test (CIPipeline stage 1)'
+
+          - script: |
+              java -jar target/spark-cicd-gitops-demo-1.0.0.jar version
+            env:
+              VERSION_BUMP: patch
+              GIT_COMMIT_SHA: $(Build.SourceVersion)
+            displayName: 'Compute next semver (CIPipeline stage 2 / BuildInfo.java)'
+
+          - task: AzureCLI@2
+            displayName: 'az acr build (build + push to ACR in one step)'
+            inputs:
+              azureSubscription: 'my-azure-service-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr build \
+                  --registry $(acrName) \
+                  --image $(imageRepo):$(Build.SourceVersion) \
+                  --build-arg VERSION=$(Build.SourceVersion) \
+                  --build-arg GIT_SHA=$(Build.SourceVersion) \
+                  --file docker/Dockerfile .
+
+          # Real ACR-native scanning: enable Microsoft Defender for Containers
+          # on the registry (Portal -> Defender for Cloud -> Environment
+          # settings -> your subscription -> Containers -> On). Every image
+          # pushed is scanned automatically and results surface as
+          # recommendations / can gate a release via a Defender API check
+          # task, equivalent to this pipeline's SecurityScanner.java gate.
+          - task: AzureCLI@2
+            displayName: 'Check ACR/Defender scan result (== SecurityScanner.java gate)'
+            inputs:
+              azureSubscription: 'my-azure-service-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo "In production: query Defender for Cloud's scan findings via"
+                echo "'az security assessment list' filtered to this image digest,"
+                echo "and fail this task if any CRITICAL finding is present -"
+                echo "identical policy to SecurityScanner.scan() in the Java demo."
+
+          - task: AzureCLI@2
+            displayName: 'Tag :dev (auto-deploy, no approval)'
+            inputs:
+              azureSubscription: 'my-azure-service-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr import --name $(acrName) \
+                  --source $(acrName).azurecr.io/$(imageRepo):$(Build.SourceVersion) \
+                  --image $(imageRepo):dev --force
+
+  # === CDPipeline: STAGE (blue/green, approval-gated) ===
+  - stage: DeployStage
+    dependsOn: CI
+    jobs:
+      - deployment: BlueGreenStage
+        pool: { vmImage: $(vmImage) }
+        environment: 'stage'   # Azure DevOps Environments support "Approvals and checks"
+                                 # configured in the UI - the real-world APPROVE_STAGE gate.
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: ./scripts/blue-green-switch.sh "$(Build.SourceVersion)"
+                  displayName: 'Deploy to inactive slot, health-check, switch traffic'
+
+  # === CDPipeline: PROD (canary, stricter approval-gated) ===
+  - stage: DeployProd
+    dependsOn: DeployStage
+    jobs:
+      - deployment: CanaryProd
+        pool: { vmImage: $(vmImage) }
+        environment: 'prod'    # separate, stricter required-approvers list = APPROVE_PROD gate
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: ./scripts/canary-rollout.sh "$(Build.SourceVersion)"
+                  displayName: 'Progressive canary rollout with auto-rollback'

@@ -1,0 +1,11 @@
+product_id,product_name,category,brand,cost_price
+P001,Wireless Mouse,Electronics,Logitech,8.50
+P002,Mechanical Keyboard,Electronics,Corsair,45.00
+P003,Cotton T-Shirt,Apparel,Nike,6.00
+P004,Running Shoes,Apparel,Adidas,32.00
+P005,Coffee Maker,HomeAppliances,Philips,28.00
+P006,Air Fryer,HomeAppliances,Instant,40.00
+P007,Yoga Mat,SportsFitness,Decathlon,7.00
+P008,Dumbbell Set,SportsFitness,CAP,22.00
+P009,Bluetooth Speaker,Electronics,JBL,18.00
+P010,Backpack,Apparel,WildCraft,15.00

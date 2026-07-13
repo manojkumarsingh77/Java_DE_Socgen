@@ -1,0 +1,47 @@
+# =============================================================================
+# ACT 2 - "THE MULTI-STAGE BUILD FIX"
+# =============================================================================
+# Solves problem #1 from Dockerfile.naive: image bloat.
+#
+# HOW: two independent build stages.
+#   Stage "builder" - has Maven + JDK + full source, does the compiling.
+#   Stage "runtime" - starts from a CLEAN, minimal JRE-only base image and copies
+#                      across ONLY the single artifact the builder produced
+#                      (the fat jar). Maven, the .m2 cache, source code and the
+#                      builder's OS layers are all discarded - they never exist
+#                      in the final image.
+#
+# Compare with Act 1:
+#   docker build -f docker/Dockerfile.naive      -t spark-training/demo:naive .
+#   docker build -f docker/Dockerfile.multistage -t spark-training/demo:multistage .
+#   docker images | grep spark-training/demo
+# You should see roughly a 3-4x size reduction.
+#
+# Still MISSING vs production-grade: runs as root, no explicit JVM container
+# flags yet, no HEALTHCHECK -> that is Act 3, Dockerfile.hardened.
+# =============================================================================
+
+# ---------- Stage 1: builder ----------
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
+WORKDIR /build
+
+# Copy pom.xml first and resolve dependencies BEFORE copying source, so Docker's
+# layer cache is reused across rebuilds when only source code (not pom.xml) changes.
+COPY pom.xml .
+RUN mvn -B dependency:go-offline
+
+COPY src ./src
+RUN mvn -B clean package -DskipTests
+
+# ---------- Stage 2: runtime ----------
+FROM eclipse-temurin:17-jre-jammy AS runtime
+WORKDIR /app
+
+# Only the built artifact crosses the stage boundary - nothing else from "builder".
+COPY --from=builder /build/target/spark-containerization-demo-1.0.0.jar app.jar
+
+ENV JAVA_OPTS=""
+ENV DEMO_MODE="diagnostics"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar ${1:-$DEMO_MODE}", "--"]
+CMD ["diagnostics"]

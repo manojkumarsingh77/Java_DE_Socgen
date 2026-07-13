@@ -1,0 +1,1 @@
+Starter IntelliJ Java 17 Spark Lakehouse project. Import as Maven project.

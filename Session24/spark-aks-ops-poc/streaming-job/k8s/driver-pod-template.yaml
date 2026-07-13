@@ -1,0 +1,29 @@
+# Spark's pod-template mechanism: --conf spark.kubernetes.driver.podTemplateFile=<this file>
+# Spark merges this into the pod spec it generates. The container Spark
+# recognizes as "the driver container" must be named exactly
+# "spark-kubernetes-driver" — confirm this against the running-on-kubernetes
+# doc for your exact Spark 3.5.x patch release before relying on it, since
+# this internal naming contract has changed across Spark versions in the past.
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    # Stable label independent of the per-run applicationId, so the
+    # health-dashboard Service (Step 6) can select this pod reliably
+    # across restarts/rolling updates of the streaming job itself.
+    demoapp: pos-streaming-driver
+spec:
+  containers:
+    - name: spark-kubernetes-driver
+      resources:
+        requests:
+          cpu: "1"
+          memory: "1536Mi"
+        limits:
+          cpu: "1500m"
+          memory: "2048Mi"
+      # Requests = what the scheduler reserves on the node (drives bin-packing
+      # and eviction priority under node pressure). Limits = the hard ceiling
+      # the kubelet enforces (memory limit breach -> OOMKilled; CPU limit ->
+      # throttled, not killed). Setting requests below limits here allows
+      # some burst headroom for GC pauses without over-reserving node capacity.

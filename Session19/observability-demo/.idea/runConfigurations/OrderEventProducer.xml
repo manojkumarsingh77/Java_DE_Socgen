@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="OrderEventProducer" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.training.observability.producer.OrderEventProducer" />
+    <module name="observability-demo-spark-kafka" />
+    <option name="VM_PARAMETERS" value="-Dservice.name=order-producer" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

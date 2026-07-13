@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.npunext.bank</groupId>
+    <artifactId>streaming-health-dashboard</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>Streaming Job Health Dashboard - Rolling Update Demo Companion</name>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <main.class>com.npunext.bank.dashboard.HealthDashboardServer</main.class>
+    </properties>
+
+    <!-- Deliberately zero external dependencies: com.sun.net.httpserver.HttpServer
+         and java.net.http.HttpClient are both part of the JDK 17 standard
+         library. This keeps the companion service's image small and its
+         build fast, which matters when the whole point of this component
+         is to demonstrate rapid, low-friction rolling updates. -->
+
+    <build>
+        <finalName>streaming-health-dashboard</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>${main.class}</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

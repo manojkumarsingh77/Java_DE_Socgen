@@ -1,0 +1,82 @@
+# =============================================================================
+# CD WORKFLOW - mirrors com.training.gitops.pipeline.CDPipeline#run() exactly.
+#
+# The APPROVAL GATES in CDPipeline.java (APPROVE_STAGE / APPROVE_PROD env vars)
+# map onto GitHub's own "Environments" feature here: the `environment:` key on
+# a job pauses that job until a required reviewer approves it in the GitHub UI
+# - this is the real-infrastructure equivalent of the demo's env vars.
+# =============================================================================
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote (already built + scanned by CI)"
+        required: true
+
+env:
+  ACR_NAME: myacr
+  IMAGE_REPO: myacr.azurecr.io/inventory-analytics
+
+jobs:
+
+  # Dev was already deployed automatically at the end of ci.yml - nothing to do here.
+  # Included only so the pipeline diagram in DEMO-GUIDE.md matches this file 1:1.
+  dev-already-live:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Dev already received this version at the end of the CI workflow (no gate)."
+
+  # === CDPipeline stage 1/2: STAGE === (BlueGreenDeploymentManager)
+  # `environment: stage` requires a reviewer configured under
+  # Settings -> Environments -> stage -> Required reviewers. That approval
+  # click is the real-world equivalent of `APPROVE_STAGE=true`.
+  deploy-stage-blue-green:
+    needs: dev-already-live
+    runs-on: ubuntu-latest
+    environment: stage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine inactive slot and deploy candidate there
+        run: ./scripts/blue-green-switch.sh "${{ inputs.version || needs.dev-already-live.outputs.version }}"
+        # blue-green-switch.sh: pulls the candidate image into the INACTIVE
+        # slot's container, health-checks it, and only then repoints the
+        # nginx/traefik upstream (or Azure Traffic Manager / App Gateway
+        # backend pool in real infra) to that slot.
+
+      - name: Tag :stage in ACR (== ArtifactRegistry.promote(version, "stage"))
+        run: |
+          az acr import --name ${{ env.ACR_NAME }} \
+            --source ${{ env.ACR_NAME }}.azurecr.io/inventory-analytics:${{ inputs.version }} \
+            --image inventory-analytics:stage --force
+
+  # === CDPipeline stage 2/2: PROD === (CanaryReleaseManager)
+  # `environment: prod` gets its OWN required reviewers, stricter than stage's
+  # - the real-world equivalent of the second, separate APPROVE_PROD gate.
+  deploy-prod-canary:
+    needs: deploy-stage-blue-green
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Progressive canary rollout (10% -> 25% -> 50% -> 100%)
+        run: ./scripts/canary-rollout.sh "${{ inputs.version }}"
+        # canary-rollout.sh: at each wave, shifts the given traffic percentage
+        # from stable to candidate at the load balancer / service-mesh layer
+        # (e.g. Azure App Gateway weighted backend pools, or an Istio
+        # VirtualService traffic split), watches an error-rate metric between
+        # waves, and calls itself again with 0% (instant revert) if the error
+        # budget is exceeded - identical policy to CanaryReleaseManager.java.
+
+      - name: Tag :prod in ACR (== ArtifactRegistry.promote(version, "prod"))
+        run: |
+          az acr import --name ${{ env.ACR_NAME }} \
+            --source ${{ env.ACR_NAME }}.azurecr.io/inventory-analytics:${{ inputs.version }} \
+            --image inventory-analytics:prod --force

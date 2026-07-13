@@ -1,0 +1,1 @@
+Import as Maven project in IntelliJ. Start Kafka on localhost:9092. Create retail-orders topic.

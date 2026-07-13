@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.bankcorp.dataeng</groupId>
+    <artifactId>aks-spark-poc</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>AKS Architecture Deep Dive - Retail Banking POC</name>
+    <description>
+        End-to-end POC: Node Pools, Autoscaler Internals, Network Policies,
+        Secrets Management, Multi-Env Isolation for Apache Spark on AKS.
+    </description>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <scala.binary.version>2.12</scala.binary.version>
+        <spark.version>3.5.1</spark.version>
+        <delta.version>3.2.0</delta.version>
+        <hadoop.version>3.3.6</hadoop.version>
+        <azure.storage.version>12.25.1</azure.storage.version>
+        <azure.identity.version>1.13.0</azure.identity.version>
+        <log4j.version>2.23.1</log4j.version>
+        <slf4j.version>2.0.7</slf4j.version>
+        <jackson.version>2.15.2</jackson.version>
+        <junit.version>5.10.2</junit.version>
+        <maven.shade.version>3.5.1</maven.shade.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <exec.mainClass>com.bankcorp.dataeng.App</exec.mainClass>
+    </properties>
+
+    <!--
+        DEPENDENCY MANAGEMENT — cross-module version arbitration.
+
+        (1) SLF4J: hadoop-azure (via azure-storage:7.0.1 / curator) transitively
+            pulls slf4j-api:1.7.36, which pre-dates LoggingEventBuilder (added in
+            SLF4J 2.0) that Spark's log4j-slf4j2-impl bridge is compiled against.
+
+        (2) Jackson: avro:1.11.2 (transitive via spark-core) pulls jackson-core:2.14.2,
+            which pre-dates StreamReadConstraints (added in jackson-core 2.15.0) that
+            spark-catalyst's JSONOptions.buildJsonFactory calls at runtime. Pinning
+            jackson-core/databind/annotations to one generation prevents the same
+            "older transitive jar wins classpath mediation" failure mode.
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+
+        <!-- ================= SPARK CORE / SQL =================
+             Explicit exclusion is a hard guarantee: even though dependencyManagement
+             should force jackson-core up to 2.15.2 everywhere, excluding avro's copy
+             here removes any ambiguity in dependency mediation for this transitive path. -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- ================= SPARK STRUCTURED STREAMING (Autoscaler load simulation) ================= -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql-kafka-0-10_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- ================= DELTA LAKE (ADLS Gen2 curated zone) ================= -->
+        <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-spark_${scala.binary.version}</artifactId>
+            <version>${delta.version}</version>
+        </dependency>
+
+        <!-- ================= HADOOP AZURE (ABFS / ADLS Gen2 driver) =================
+             Exclusions prevent this module from re-introducing legacy slf4j-api:1.7.36
+             and a duplicate commons-logging binding (jcl-over-slf4j already covers
+             JCL routing transitively via Spark). -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-azure</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-azure-datalake</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- ================= AZURE SDK - BLOB (RAW zone ingestion) ================= -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-storage-blob</artifactId>
+            <version>${azure.storage.version}</version>
+        </dependency>
+
+        <!-- ================= AZURE IDENTITY (Managed Identity / SP auth for Key Vault + ADLS) ================= -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity</artifactId>
+            <version>${azure.identity.version}</version>
+        </dependency>
+
+        <!-- ================= AZURE KEY VAULT SECRETS ================= -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-security-keyvault-secrets</artifactId>
+            <version>4.8.7</version>
+        </dependency>
+
+        <!-- ================= LOGGING =================
+             log4j-slf4j2-impl (NOT log4j-slf4j-impl) is the correct bridge for
+             Spark 3.5.x, which depends on slf4j-api 2.x. Do not add both bridges —
+             having log4j-slf4j-impl and log4j-slf4j2-impl on the classpath at once
+             registers two competing SLF4JServiceProvider bindings and reproduces
+             the original NoClassDefFoundError: org/slf4j/spi/LoggingEventBuilder. -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j2-impl</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+
+        <!-- ================= TEST ================= -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <finalName>aks-spark-poc</finalName>
+        <plugins>
+
+            <!-- Java 17 compilation -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven.compiler.plugin.version}</version>
+                <configuration>
+                    <release>17</release>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <!-- Fat/Uber JAR for spark-submit on AKS -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>${maven.shade.version}</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>${exec.mainClass}</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>reference.conf</resource>
+                                </transformer>
+                            </transformers>
+                            <relocations>
+                                <relocation>
+                                    <pattern>com.google.common</pattern>
+                                    <shadedPattern>shaded.com.google.common</shadedPattern>
+                                </relocation>
+                            </relocations>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>

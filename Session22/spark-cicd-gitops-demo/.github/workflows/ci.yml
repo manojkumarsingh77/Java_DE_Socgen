@@ -1,0 +1,107 @@
+# =============================================================================
+# CI WORKFLOW - mirrors com.training.gitops.pipeline.CIPipeline#run() exactly.
+# Each job below is annotated with the Java method it corresponds to, so you
+# can teach "this YAML stage == this class/method" directly from this file.
+#
+# This workflow is a genuine, runnable GitHub Actions pipeline (point a repo's
+# Actions secrets at a real Azure Container Registry to run it for real) - but
+# is NOT required for the local Java demo, which runs identically without any
+# of this. Use this file for the "how does this look in real infra" half of
+# the session.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  ACR_NAME: myacr                          # your Azure Container Registry name
+  IMAGE_REPO: myacr.azurecr.io/inventory-analytics
+
+jobs:
+
+  # === CIPipeline stage 1/4: BUILD ===
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed so `git rev-parse` gives a real SHA
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build (== `mvn clean package`, then App.java mode "job" as smoke test)
+        run: |
+          mvn -B clean package -DskipTests
+          java -jar target/spark-cicd-gitops-demo-1.0.0.jar job
+
+      # === CIPipeline stage 2/4: VERSION === (SemanticVersionCalculator.next)
+      - name: Compute next semantic version
+        id: version
+        env:
+          VERSION_BUMP: patch   # derive from conventional-commit parsing in a real pipeline
+          GIT_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          java -jar target/spark-cicd-gitops-demo-1.0.0.jar version
+          echo "version=$(cat .registry/version.txt 2>/dev/null || echo 1.0.0)" >> "$GITHUB_OUTPUT"
+
+  # === CIPipeline stage 3/4: SCAN === (SecurityScanner.scan)
+  security-scan:
+    needs: build-and-smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image for scanning
+        run: |
+          docker build \
+            --build-arg VERSION=${{ needs.build-and-smoke-test.outputs.version }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -f docker/Dockerfile -t ${{ env.IMAGE_REPO }}:${{ needs.build-and-smoke-test.outputs.version }} .
+
+      # Real ACR-integrated equivalent: Microsoft Defender for Cloud's
+      # ACR scanning, OR an explicit Trivy step like this one:
+      - name: Trivy vulnerability scan (same gate as SecurityScanner.java)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ needs.build-and-smoke-test.outputs.version }}
+          format: table
+          exit-code: '1'          # fail the job on any finding at/above severity-cutoff
+          severity: 'CRITICAL'    # mirrors SecurityScanner's "zero critical" policy
+
+  # === CIPipeline stage 4/4: PUSH (to ACR) + auto-deploy Dev ===
+  push-to-acr:
+    needs: [build-and-smoke-test, security-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: az acr build (build + push in one Azure-native step)
+        run: |
+          az acr build \
+            --registry ${{ env.ACR_NAME }} \
+            --image inventory-analytics:${{ needs.build-and-smoke-test.outputs.version }} \
+            --build-arg VERSION=${{ needs.build-and-smoke-test.outputs.version }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            --file docker/Dockerfile .
+
+      - name: Tag :dev (== ArtifactRegistry.promote(version, "dev"), no approval needed)
+        run: |
+          az acr import \
+            --name ${{ env.ACR_NAME }} \
+            --source ${{ env.ACR_NAME }}.azurecr.io/inventory-analytics:${{ needs.build-and-smoke-test.outputs.version }} \
+            --image inventory-analytics:dev --force

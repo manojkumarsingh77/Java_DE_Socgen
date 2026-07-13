@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: retail-fraud-velocity-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: spark-driver
+          image: acrsparkdemo.azurecr.io/spark-aks-demo:1.0.0
+          command: ["/opt/entrypoint.sh"]
+          args:
+            - "/opt/spark/bin/spark-submit" # Fixed: absolute path to the Spark binary
+            - "--master"
+            - "local[*]"
+            - "--class"
+            - "com.training.spark.aks.RetailFraudVelocityJob"
+            - "/opt/spark-apps/spark-aks-demo.jar"
+            - "/tmp/spark-output"
+            - "50000"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+      restartPolicy: Never
+  backoffLimit: 1

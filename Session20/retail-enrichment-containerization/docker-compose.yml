@@ -1,0 +1,49 @@
+# =============================================================================
+# docker-compose.yml
+#
+# Demonstrates RESOURCE CONSTRAINTS + IMAGE HARDENING at the container-run
+# level (complements the Dockerfile, which handles the build + JVM tuning).
+#
+# Requires Docker Compose v2 (the "docker compose" CLI bundled with modern
+# Docker Desktop / Docker Engine). deploy.resources.limits is honored
+# without Swarm mode since Compose v2.20+.
+# =============================================================================
+
+services:
+  retail-enrichment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: retail-enrichment:1.0.0
+    container_name: retail-enrichment-job
+
+    # ---------------- RESOURCE CONSTRAINTS ----------------
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"        # JVM (UseContainerSupport) will see ~2 CPUs
+          memory: 1024M       # Hard cap; JVM heap = 75% of this (MaxRAMPercentage)
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    pids_limit: 100            # caps forked/thread process count (fork-bomb protection)
+
+    # ---------------- IMAGE / RUNTIME HARDENING ----------------
+    read_only: true             # root filesystem is immutable
+    security_opt:
+      - no-new-privileges:true  # process can never gain more privileges than it started with
+    cap_drop:
+      - ALL                    # drop every Linux capability; job needs none
+    tmpfs:
+      - /tmp:size=256m,mode=1777   # writable scratch space despite read-only rootfs
+
+    environment:
+      SPARK_MASTER: "local[*]"
+      SPARK_SHUFFLE_PARTITIONS: "4"
+
+    volumes:
+      # Persist the enriched output on the host for inspection after the
+      # (read-only-rootfs) container exits.
+      - ./output:/app/output
+
+    # No published ports needed - this is a batch job, not a service.

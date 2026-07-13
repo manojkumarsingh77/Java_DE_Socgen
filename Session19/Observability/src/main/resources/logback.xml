@@ -1,0 +1,16 @@
+<configuration>
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlation_id</includeMdcKeyName>
+            <includeMdcKeyName>batch_id</includeMdcKeyName>
+            <includeMdcKeyName>app</includeMdcKeyName>
+            <includeMdcKeyName>signal</includeMdcKeyName>
+            <customFields>{"app":"paynova-spark","env":"training"}</customFields>
+        </encoder>
+    </appender>
+    <logger name="org.apache.spark" level="WARN"/>
+    <logger name="org.apache.kafka" level="WARN"/>
+    <root level="INFO">
+        <appender-ref ref="JSON"/>
+    </root>
+</configuration>

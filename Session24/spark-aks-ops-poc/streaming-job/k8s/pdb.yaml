@@ -1,0 +1,34 @@
+# PodDisruptionBudgets only govern VOLUNTARY disruptions — kubectl drain,
+# AKS node-pool upgrades, cluster-autoscaler scale-down. They do NOT protect
+# against involuntary disruptions (node hardware failure, kubelet crash,
+# OOMKill) — that distinction is a core discussion point for this module
+# (see LAB_GUIDE.md discussion guide, "Pod Disruption Budgets").
+
+# --- Executors: keep at least 2 of 3 available during any single drain ----
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pos-streaming-executors-pdb
+  namespace: spark-ops-poc
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      demoapp: pos-streaming-executor
+---
+# --- Driver: the streaming query has exactly one driver pod. maxUnavailable: 0
+# means the Kubernetes eviction API will refuse to voluntarily evict it at
+# all — `kubectl drain` on the node hosting it will block until you
+# explicitly override with --disable-eviction or cordon+manually reschedule.
+# This is the correct, deliberate posture for a stateful singleton driver:
+# forced human awareness before it moves, rather than silent restart.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pos-streaming-driver-pdb
+  namespace: spark-ops-poc
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      demoapp: pos-streaming-driver
