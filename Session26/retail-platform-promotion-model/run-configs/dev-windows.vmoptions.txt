@@ -1,0 +1,35 @@
+# =============================================================================
+# IntelliJ IDEA Run/Debug Configuration -> VM options
+# Target: Windows 11, x64, Java 17 Temurin
+# Main class: com.retailbank.pipeline.PromotionPipeline
+# Program arguments: (none - environment is selected via -Denv system property)
+#
+# PREREQUISITE: download winutils.exe + hadoop.dll matching Hadoop 3.3.x from
+# https://github.com/cdarlint/winutils and place them in C:\hadoop\bin\
+# (Spark's local file-system shims need winutils.exe even though this demo
+# never touches HDFS - without it, Spark throws
+# "java.io.IOException: Could not locate executable null\bin\winutils.exe")
+# =============================================================================
+
+-Denv=dev
+-Xms1g
+-Xmx4g
+-XX:+UseG1GC
+-Dhadoop.home.dir=C:\hadoop
+
+# Java 17 strong-encapsulation overrides required by Spark's reliance on
+# reflective access into java.base internals (Platform.java, Cleaner, etc.)
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens=java.base/java.io=ALL-UNNAMED
+--add-opens=java.base/java.net=ALL-UNNAMED
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/java.util=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+--add-opens=java.base/sun.security.action=ALL-UNNAMED
+--add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED

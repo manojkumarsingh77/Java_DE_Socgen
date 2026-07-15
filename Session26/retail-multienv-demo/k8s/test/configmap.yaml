@@ -1,0 +1,35 @@
+# This ConfigMap is the "config externalization" mechanism for the TEST
+# environment: it is mounted into the driver/executor pods at
+# /opt/spark/conf/external/application-test.conf, and EnvironmentConfigLoader
+# picks it up via -Dretail.config.dir=/opt/spark/conf/external, which takes
+# precedence over the copy baked into the image at build time. This lets a
+# platform engineer change output paths, partition counts, or the Key Vault
+# URI for TEST without rebuilding or re-pushing the container image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retail-platform-config
+  namespace: retail-platform-test
+data:
+  application-test.conf: |
+    retail-platform {
+      environment.name = "test"
+      spark {
+        app-name = "retail-multienv-demo-test"
+        shuffle-partitions = 16
+        master = "k8s://https://REPLACE_WITH_AKS_API_SERVER:443"
+      }
+      data {
+        synthetic-record-count = 250000
+        output-format = "delta"
+        output-path = "abfss://retail-data@retailplatformtestsa.dfs.core.windows.net/reconciliation/output"
+        checkpoint-path = "abfss://retail-data@retailplatformtestsa.dfs.core.windows.net/reconciliation/checkpoints"
+      }
+      secrets {
+        provider = "azure-key-vault"
+        key-vault-uri = "https://retail-platform-test-kv.vault.azure.net/"
+      }
+      reconciliation {
+        discrepancy-threshold-cents = 1
+      }
+    }

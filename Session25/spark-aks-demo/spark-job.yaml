@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
         - name: spark-driver
-          image: acrsparkdemo.azurecr.io/spark-aks-demo:1.0.0
+          image: acrsparkdatahulk.azurecr.io/spark-aks-demo:1.0.0
           command: ["/opt/entrypoint.sh"]
           args:
             - "/opt/spark/bin/spark-submit" # Fixed: absolute path to the Spark binary

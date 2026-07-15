@@ -1,0 +1,67 @@
+# Requires the Spark-on-Kubernetes Operator (kubeflow/spark-operator) installed
+# in the cluster:
+#   helm install spark-operator spark-operator/spark-operator \
+#     --namespace spark-operator --create-namespace --set webhook.enable=true
+#
+# Apply this AFTER namespace.yaml, configmap.yaml, and secretproviderclass.yaml.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: retail-multienv-demo-test
+  namespace: retail-platform-test
+spec:
+  type: Java
+  mode: cluster
+  image: "REPLACE_WITH_ACR_LOGIN_SERVER.azurecr.io/retail-multienv-demo:1.0.0"
+  imagePullPolicy: Always
+  mainClass: com.retailbank.dataplatform.Main
+  mainApplicationFile: "local:///opt/spark/jars-app/retail-multienv-demo.jar"
+
+  sparkVersion: "3.5.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+    onSubmissionFailureRetries: 2
+    onSubmissionFailureRetryInterval: 30
+
+  sparkConf:
+    "spark.kubernetes.namespace": "retail-platform-test"
+    "spark.driver.extraJavaOptions": >-
+      -Dretail.env=test
+      -Dretail.config.dir=/opt/spark/conf/external
+    "spark.executor.extraJavaOptions": >-
+      -Dretail.env=test
+      -Dretail.config.dir=/opt/spark/conf/external
+
+  dynamicAllocation:
+    enabled: true
+    initialExecutors: 2
+    minExecutors: 2
+    maxExecutors: 8
+
+  driver:
+    cores: 2
+    memory: "4g"
+    serviceAccount: retail-platform-spark-sa
+    labels:
+      environment: test
+      azure.workload.identity/use: "true"
+    volumeMounts:
+      - name: external-config
+        mountPath: /opt/spark/conf/external
+
+  executor:
+    cores: 2
+    memory: "4g"
+    labels:
+      environment: test
+      azure.workload.identity/use: "true"
+    volumeMounts:
+      - name: external-config
+        mountPath: /opt/spark/conf/external
+
+  volumes:
+    - name: external-config
+      configMap:
+        name: retail-platform-config

@@ -1,0 +1,39 @@
+# This ConfigMap is the "config externalization" mechanism for the PROD
+# environment: it is mounted into the driver/executor pods at
+# /opt/spark/conf/external/application-prod.conf, and EnvironmentConfigLoader
+# picks it up via -Dretail.config.dir=/opt/spark/conf/external, which takes
+# precedence over the copy baked into the image at build time. This lets a
+# platform engineer change output paths, partition counts, or the Key Vault
+# URI for PROD without rebuilding or re-pushing the container image.
+#
+# PRODUCTION CHANGE CONTROL: unlike test/, changes to this file should go
+# through the promotion workflow's approval gate (see LAB_GUIDE.md Part 6)
+# rather than being applied ad hoc with kubectl apply.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retail-platform-config
+  namespace: retail-platform-prod
+data:
+  application-prod.conf: |
+    retail-platform {
+      environment.name = "prod"
+      spark {
+        app-name = "retail-multienv-demo-prod"
+        shuffle-partitions = 64
+        master = "k8s://https://REPLACE_WITH_AKS_API_SERVER:443"
+      }
+      data {
+        synthetic-record-count = 2000000
+        output-format = "delta"
+        output-path = "abfss://retail-data@retailplatformprodsa.dfs.core.windows.net/reconciliation/output"
+        checkpoint-path = "abfss://retail-data@retailplatformprodsa.dfs.core.windows.net/reconciliation/checkpoints"
+      }
+      secrets {
+        provider = "azure-key-vault"
+        key-vault-uri = "https://retail-platform-prod-kv.vault.azure.net/"
+      }
+      reconciliation {
+        discrepancy-threshold-cents = 1
+      }
+    }

@@ -1,0 +1,20 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: retail-promotion
+spec:
+  sparkConf:
+    spark.sql.shuffle.partitions: "400"
+  driver:
+    cores: 4
+    memory: "8g"
+    env:
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Denv=prod"
+  executor:
+    cores: 4
+    instances: 20
+    memory: "8g"
+    env:
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Denv=prod"

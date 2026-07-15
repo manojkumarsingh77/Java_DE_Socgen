@@ -1,0 +1,44 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: retail-promotion
+  labels:
+    app.kubernetes.io/name: retail-platform-promotion-model
+spec:
+  type: Java
+  mode: cluster
+  # image + sparkVersion are overridden per-environment via kustomize images: / patches
+  image: "acrretailbank.azurecr.io/retail-platform-promotion-model:CHANGE_ME"
+  imagePullPolicy: Always
+  sparkVersion: "3.5.1"
+  mainClass: com.retailbank.pipeline.PromotionPipeline
+  mainApplicationFile: "local:///opt/spark/jars/retail-platform-promotion-model-1.0.0.jar"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+    onSubmissionFailureRetries: 3
+    onSubmissionFailureRetryInterval: 30
+  sparkConf:
+    spark.sql.shuffle.partitions: "8"          # overridden per-env by overlay patch
+    spark.kubernetes.allocation.batch.size: "5"
+    spark.dynamicAllocation.enabled: "true"
+    spark.dynamicAllocation.shuffleTracking.enabled: "true"
+  driver:
+    cores: 1
+    memory: "2g"
+    serviceAccount: spark-driver
+    env:
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Denv=dev"                     # overridden per-env by overlay patch
+    labels:
+      app.kubernetes.io/name: retail-platform-promotion-model
+  executor:
+    cores: 1
+    instances: 2
+    memory: "2g"
+    env:
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Denv=dev"                     # overridden per-env by overlay patch
+    labels:
+      app.kubernetes.io/name: retail-platform-promotion-model

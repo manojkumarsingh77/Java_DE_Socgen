@@ -1,0 +1,30 @@
+# =============================================================================
+# IntelliJ IDEA Run/Debug Configuration -> VM options
+# Target: macOS, Apple Silicon (M1 Max, ARM64), Java 17 Temurin
+# Main class: com.retailbank.pipeline.PromotionPipeline
+# Program arguments: (none - environment is selected via -Denv system property)
+# =============================================================================
+
+-Denv=dev
+-Xms1g
+-Xmx4g
+-XX:+UseG1GC
+
+# Java 17 strong-encapsulation overrides required by Spark's reliance on
+# reflective access into java.base internals (Platform.java, Cleaner, etc.)
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens=java.base/java.io=ALL-UNNAMED
+--add-opens=java.base/java.net=ALL-UNNAMED
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/java.util=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+--add-opens=java.base/sun.security.action=ALL-UNNAMED
+--add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+
+# No -Dhadoop.home.dir needed on macOS/Linux - winutils.exe is a Windows-only requirement.

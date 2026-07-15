@@ -1,0 +1,78 @@
+# PROMOTION MODEL: notice this manifest references the EXACT same image tag
+# structure and mainClass as k8s/test/spark-application.yaml. The only fields
+# that differ between test and prod are: namespace, resource sizing,
+# dynamicAllocation bounds, restartPolicy tolerances, and the -Dretail.env
+# value. The image itself is the SAME immutable artifact promoted from the
+# test namespace after validation — never rebuilt for prod.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: retail-multienv-demo-prod
+  namespace: retail-platform-prod
+spec:
+  type: Java
+  mode: cluster
+  image: "REPLACE_WITH_ACR_LOGIN_SERVER.azurecr.io/retail-multienv-demo:1.0.0"
+  imagePullPolicy: IfNotPresent
+  mainClass: com.retailbank.dataplatform.Main
+  mainApplicationFile: "local:///opt/spark/jars-app/retail-multienv-demo.jar"
+
+  sparkVersion: "3.5.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 3
+    onFailureRetryInterval: 60
+    onSubmissionFailureRetries: 3
+    onSubmissionFailureRetryInterval: 60
+
+  sparkConf:
+    "spark.kubernetes.namespace": "retail-platform-prod"
+    "spark.driver.extraJavaOptions": >-
+      -Dretail.env=prod
+      -Dretail.config.dir=/opt/spark/conf/external
+    "spark.executor.extraJavaOptions": >-
+      -Dretail.env=prod
+      -Dretail.config.dir=/opt/spark/conf/external
+    "spark.kubernetes.executor.deleteOnTermination": "true"
+
+  dynamicAllocation:
+    enabled: true
+    initialExecutors: 4
+    minExecutors: 4
+    maxExecutors: 40
+
+  driver:
+    cores: 4
+    memory: "8g"
+    serviceAccount: retail-platform-spark-sa
+    labels:
+      environment: prod
+      azure.workload.identity/use: "true"
+    tolerations:
+      - key: "workload-type"
+        operator: "Equal"
+        value: "spark-prod"
+        effect: "NoSchedule"
+    volumeMounts:
+      - name: external-config
+        mountPath: /opt/spark/conf/external
+
+  executor:
+    cores: 4
+    memory: "8g"
+    labels:
+      environment: prod
+      azure.workload.identity/use: "true"
+    tolerations:
+      - key: "workload-type"
+        operator: "Equal"
+        value: "spark-prod"
+        effect: "NoSchedule"
+    volumeMounts:
+      - name: external-config
+        mountPath: /opt/spark/conf/external
+
+  volumes:
+    - name: external-config
+      configMap:
+        name: retail-platform-config
