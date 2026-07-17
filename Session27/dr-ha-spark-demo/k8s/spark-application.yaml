@@ -1,0 +1,116 @@
+# ============================================================================
+# SparkApplication CRD (spark-on-k8s-operator) — Cross-Region Failover Simulation
+#
+# IMPORTANT ARCHITECTURE NOTE:
+# This Spark job itself demonstrates the *replication/backup/failover logic*
+# against two Delta table paths. True cross-REGION HA for the job's own
+# compute requires two separate AKS clusters deployed in paired Azure regions
+# (e.g. East US 2 <-> Central US) behind Azure Front Door / Traffic Manager,
+# with this same SparkApplication deployed identically in both via GitOps
+# (Flux/ArgoCD). The `region` label below identifies which physical AKS
+# cluster this instance is running in for observability/alerting purposes.
+# ============================================================================
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: cross-region-failover-simulation
+  namespace: data-platform-dr
+  labels:
+    app: dr-ha-demo
+    region: us-east-primary
+    module: disaster-recovery-ha
+spec:
+  type: Java
+  mode: cluster
+  image: "bankdracr.azurecr.io/dr-ha-spark-demo:1.0.0"
+  imagePullPolicy: Always
+  mainClass: com.retailbank.dr.Main
+  mainApplicationFile: "local:///opt/dr-ha-demo/jars/app.jar"
+  sparkVersion: "3.5.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+    onSubmissionFailureRetries: 3
+    onSubmissionFailureRetryInterval: 20
+
+  sparkConf:
+    "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension"
+    "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+    "spark.dynamicAllocation.enabled": "false"
+
+  driver:
+    cores: 1
+    coreLimit: "2000m"
+    memory: "2g"
+    labels:
+      version: 3.5.1
+      workload: dr-drill
+    serviceAccount: spark
+    tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "data-engineering"
+        effect: "NoSchedule"
+    nodeSelector:
+      agentpool: dataeng
+    volumeMounts:
+      - name: dr-reports
+        mountPath: /opt/dr-ha-demo/reports
+      - name: dr-backups
+        mountPath: /opt/dr-ha-demo/backups
+
+  executor:
+    cores: 2
+    coreLimit: "2000m"
+    instances: 3
+    memory: "4g"
+    labels:
+      version: 3.5.1
+      workload: dr-drill
+    tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "data-engineering"
+        effect: "NoSchedule"
+    nodeSelector:
+      agentpool: dataeng
+
+  volumes:
+    - name: dr-reports
+      persistentVolumeClaim:
+        claimName: dr-reports-pvc
+    - name: dr-backups
+      persistentVolumeClaim:
+        claimName: dr-backups-pvc
+
+  monitoring:
+    exposeDriverMetrics: true
+    exposeExecutorMetrics: true
+    prometheus:
+      jmxExporterJar: "/prometheus/jmx_prometheus_javaagent.jar"
+      port: 8090
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dr-reports-pvc
+  namespace: data-platform-dr
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dr-backups-pvc
+  namespace: data-platform-dr
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 20Gi

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+spec:
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "data-engineering"
+      effect: "NoSchedule"
+  # Spread executors across AKS availability zones so a single-zone outage
+  # (a realistic AKS-level HA failure mode distinct from the cross-region
+  # ledger drill this app simulates) doesn't take out the whole executor fleet.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "topology.kubernetes.io/zone"
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          workload: dr-drill
+  containers:
+    - name: spark-kubernetes-executor
+      resources:
+        requests:
+          memory: "4Gi"
+          cpu: "2"
+        limits:
+          memory: "5Gi"
+          cpu: "2"
